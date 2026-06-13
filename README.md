@@ -193,4 +193,4 @@ Before deploying a public build, copy fresh Tauri bundles into `public/downloads
 
 ## License
 
-No license has been selected yet.
+YDLite is licensed under the [MIT License](LICENSE).
