@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.wrangler/
+src-tauri/target/
+tmp-test/
+*.stackdump
+*.log
+.DS_Store
