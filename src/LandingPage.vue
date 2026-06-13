@@ -523,7 +523,7 @@ svg {
   position: relative;
   margin: 0;
   overflow: hidden;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 1452 / 795;
   background: #ede7de;
   contain: paint;
 }
@@ -538,10 +538,10 @@ svg {
 
 .hero-shot {
   display: block;
-  width: 138%;
-  height: 138%;
-  object-fit: cover;
-  object-position: left top;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
 }
 
 .section-shell {
