@@ -12,74 +12,118 @@ let observers: IntersectionObserver[] = []
 
 const bentoCards = [
   {
-    title: 'Parse first',
-    body: 'Paste a URL and inspect title, author, duration, thumbnail, playlist entries, and available formats before downloading.',
-    label: 'Metadata',
-    className: 'wide',
+    key: 'parse',
+    icon: 'link',
+    label: 'Parse',
+    title: 'Preview before download',
+    body: 'Title, duration, source, thumbnail, playlist entries, and formats.',
   },
   {
-    title: 'Compatible MP4',
-    body: 'Defaults prefer MP4 video with M4A/AAC audio, avoiding common Windows playback issues caused by Opus in MP4.',
-    label: 'Playback',
-    className: 'tall',
+    key: 'mp4',
+    icon: 'play',
+    label: 'MP4',
+    title: 'Windows-friendly output',
+    body: 'Prefers MP4 video with M4A/AAC audio to avoid Opus playback issues.',
   },
   {
-    title: 'Local tools',
-    body: 'Uses local yt-dlp and ffmpeg. Checks and installs are manual, so app startup stays fast.',
+    key: 'local',
+    icon: 'shield',
     label: 'Local',
-    className: '',
+    title: 'No cloud queue',
+    body: 'yt-dlp and ffmpeg run on your PC.',
   },
   {
-    title: 'Clear progress',
-    body: 'Shows percent, speed, ETA, total size, finished path, and expandable yt-dlp logs.',
-    label: 'Feedback',
-    className: '',
+    key: 'speed',
+    icon: 'bolt',
+    label: 'Fast',
+    title: 'Opens quickly',
+    body: 'No default dependency scan on launch.',
   },
   {
-    title: 'Cookies only when needed',
-    body: 'Use cookies.txt for private or login-gated links without making it part of the normal flow.',
+    key: 'cookies',
+    icon: 'cookie',
     label: 'Access',
-    className: '',
+    title: 'Cookies when needed',
+    body: 'Keep private-link support out of the primary path.',
   },
   {
+    key: 'queue',
+    icon: 'list',
+    label: 'Queue',
     title: 'Playlist control',
-    body: 'Select individual playlist items and process them with a simple visible queue.',
-    label: 'Batch',
-    className: 'wide',
+    body: 'Pick items, then watch a simple serial queue.',
+  },
+  {
+    key: 'logs',
+    icon: 'terminal',
+    label: 'Logs',
+    title: 'Readable progress',
+    body: 'Percent, speed, ETA, finished file, and expandable details.',
   },
 ]
 
-const steps = [
-  ['01', 'Paste', 'Drop in a supported URL.'],
-  ['02', 'Parse', 'Confirm the video and format.'],
-  ['03', 'Download', 'Choose a folder and track progress.'],
+const statItems = [
+  ['3.6 MB', 'installer'],
+  ['Manual', 'tool checks'],
+  ['AAC', 'default audio'],
 ]
+
+function iconPath(name: string) {
+  const icons: Record<string, string> = {
+    link: 'M10.6 13.4a1 1 0 0 1 0-1.4l3.4-3.4a3 3 0 1 1 4.2 4.2l-1.2 1.2a1 1 0 1 1-1.4-1.4l1.2-1.2a1 1 0 0 0-1.4-1.4L12 13.4a1 1 0 0 1-1.4 0Zm2.8-2.8a1 1 0 0 1 0 1.4L10 15.4a3 3 0 1 1-4.2-4.2L7 10a1 1 0 1 1 1.4 1.4l-1.2 1.2A1 1 0 1 0 8.6 14l3.4-3.4a1 1 0 0 1 1.4 0Z',
+    play: 'M8 5.8c0-.8.9-1.3 1.6-.9l7 4.2c.7.4.7 1.4 0 1.8l-7 4.2A1.1 1.1 0 0 1 8 14.2V5.8Z',
+    shield: 'M12 3 5.5 5.6v5.1c0 4.1 2.8 7.9 6.5 8.9 3.7-1 6.5-4.8 6.5-8.9V5.6L12 3Zm2.9 6.6-3.4 3.4-1.5-1.5a1 1 0 0 0-1.4 1.4l2.2 2.2c.4.4 1 .4 1.4 0l4.1-4.1a1 1 0 0 0-1.4-1.4Z',
+    bolt: 'M13 2 5 13h6l-1 9 8-12h-6l1-8Z',
+    cookie: 'M18.5 10.2A6.9 6.9 0 1 1 13.8 5a2.5 2.5 0 0 0 3.3 3.2 2.5 2.5 0 0 0 1.4 2ZM9 10.2a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm4.2 5.2a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm-4.7 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z',
+    list: 'M7 6h12v2H7V6Zm0 5h12v2H7v-2Zm0 5h12v2H7v-2ZM4 6h1v2H4V6Zm0 5h1v2H4v-2Zm0 5h1v2H4v-2Z',
+    terminal: 'M4 5h16v14H4V5Zm2 2v10h12V7H6Zm2 2.2 2.2 1.8L8 12.8l1.2 1.4 3.8-3.2-3.8-3.2L8 9.2Zm5 4.8h4v-2h-4v2Z',
+  }
+  return icons[name] || icons.link
+}
 
 onMounted(() => {
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   context = gsap.context(() => {
     if (reduceMotion) {
-      gsap.set('[data-animate], [data-reveal]', { autoAlpha: 1, y: 0 })
+      gsap.set('[data-animate], [data-reveal], .demo-result, .demo-progress-fill', { autoAlpha: 1, y: 0, scaleX: 1 })
       return
     }
 
     gsap
       .timeline({ defaults: { ease: 'power3.out' } })
-      .from('[data-animate="nav"]', { y: -14, autoAlpha: 0, duration: 0.45 })
-      .from('[data-animate="hero"] > *', { y: 28, autoAlpha: 0, duration: 0.62, stagger: 0.07 }, '-=0.1')
-      .from('[data-animate="mockup"]', { y: 34, autoAlpha: 0, duration: 0.7 }, '-=0.42')
-      .from('.mock-line, .mock-chip, .mock-progress span', { scaleX: 0, transformOrigin: 'left center', duration: 0.42, stagger: 0.035 }, '-=0.32')
+      .from('[data-animate="nav"]', { y: -14, autoAlpha: 0, duration: 0.42 })
+      .from('[data-animate="hero"] > *', { y: 26, autoAlpha: 0, duration: 0.58, stagger: 0.06 }, '-=0.08')
+      .from('[data-animate="demo"]', { y: 32, autoAlpha: 0, duration: 0.66 }, '-=0.34')
+
+    const demo = gsap.timeline({ repeat: -1, repeatDelay: 1.2, defaults: { ease: 'power3.out' } })
+    demo
+      .set('.demo-url-fill', { width: 0 })
+      .set('.demo-result', { autoAlpha: 0, y: 18 })
+      .set('.demo-progress-fill', { scaleX: 0, transformOrigin: 'left center' })
+      .set('.demo-progress-text', { textContent: '0%' })
+      .set('.demo-dot', { backgroundColor: '#d8cec2' })
+      .to('.demo-url-fill', { width: '100%', duration: 0.7 })
+      .to('.demo-button', { scale: 0.96, duration: 0.1 }, '+=0.08')
+      .to('.demo-button', { scale: 1, duration: 0.16 })
+      .to('.demo-dot.parse', { backgroundColor: '#2e77e5', duration: 0.18 }, '<')
+      .to('.demo-result', { autoAlpha: 1, y: 0, duration: 0.42 }, '-=0.02')
+      .to('.demo-dot.format', { backgroundColor: '#4f7458', duration: 0.18 }, '-=0.12')
+      .to('.demo-progress-fill', { scaleX: 0.72, duration: 0.85 }, '+=0.12')
+      .to('.demo-progress-text', { textContent: '72%', duration: 0.85, snap: { textContent: 1 } }, '<')
+      .to('.demo-dot.download', { backgroundColor: '#2e77e5', duration: 0.18 }, '-=0.45')
+      .to('.demo-result', { y: -4, duration: 0.22 }, '+=0.1')
+      .to('.demo-result', { y: 0, duration: 0.22 })
 
     const items = Array.from(page.value?.querySelectorAll<HTMLElement>('[data-reveal]') || [])
     items.forEach((element) => {
-      gsap.set(element, { y: 24, autoAlpha: 0 })
+      gsap.set(element, { y: 22, autoAlpha: 0 })
       const observer = new IntersectionObserver(
         ([entry]) => {
           if (!entry.isIntersecting) return
-          gsap.to(element, { y: 0, autoAlpha: 1, duration: 0.5, ease: 'power3.out' })
+          gsap.to(element, { y: 0, autoAlpha: 1, duration: 0.48, ease: 'power3.out' })
           observer.disconnect()
         },
-        { threshold: 0.16 },
+        { threshold: 0.14 },
       )
       observer.observe(element)
       observers.push(observer)
@@ -101,59 +145,79 @@ onBeforeUnmount(() => {
         <span class="brand-mark">Y</span>
         <span>YDLite</span>
       </a>
-      <div class="nav-links">
-        <a href="#features">Features</a>
-        <a href="#download">Download</a>
-        <a :href="githubUrl" target="_blank" rel="noreferrer">GitHub</a>
+
+      <div class="nav-actions">
+        <a class="icon-link" :href="githubUrl" target="_blank" rel="noreferrer" aria-label="GitHub repository">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.41-4.04-1.41-.55-1.38-1.34-1.75-1.34-1.75-1.09-.75.08-.74.08-.74 1.21.09 1.85 1.25 1.85 1.25 1.07 1.84 2.82 1.31 3.51 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.31-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.48 5.93.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z" />
+          </svg>
+        </a>
+        <a class="nav-download" :href="downloadUrl" download>Download</a>
       </div>
-      <a class="nav-download" :href="downloadUrl" download>Download</a>
     </nav>
 
     <section id="top" class="hero-section">
       <div class="hero-copy" data-animate="hero">
-        <p class="eyebrow">Windows desktop downloader</p>
-        <h1>YDLite keeps video downloads local and predictable.</h1>
+        <p class="eyebrow">Local video downloads</p>
+        <h1>Paste. Preview. Download.</h1>
         <p class="hero-lede">
-          A compact Tauri app for links supported by yt-dlp. Parse the link, confirm the output,
-          download with visible progress, and keep the workflow on your machine.
+          YDLite wraps yt-dlp in a fast Windows app with visible progress, compatible MP4 defaults,
+          and tools that stay on your machine.
         </p>
         <div class="hero-actions">
-          <a class="button primary" :href="downloadUrl" download>Download for Windows</a>
-          <a class="button ghost" :href="githubUrl" target="_blank" rel="noreferrer">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.41-4.04-1.41-.55-1.38-1.34-1.75-1.34-1.75-1.09-.75.08-.74.08-.74 1.21.09 1.85 1.25 1.85 1.25 1.07 1.84 2.82 1.31 3.51 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.31-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.48 5.93.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z" />
-            </svg>
-            GitHub
-          </a>
+          <a class="button primary" :href="downloadUrl" download>Windows setup</a>
+          <a class="button ghost" href="#features">Features</a>
         </div>
-        <div class="trust-row">
-          <span>No cloud queue</span>
-          <span>Manual dependency checks</span>
-          <span>MP4 compatibility first</span>
+        <div class="stat-strip" aria-label="Product highlights">
+          <div v-for="item in statItems" :key="item[1]">
+            <strong>{{ item[0] }}</strong>
+            <span>{{ item[1] }}</span>
+          </div>
         </div>
       </div>
 
-      <div class="product-mockup" data-animate="mockup" aria-label="YDLite app preview">
-        <div class="mock-titlebar">
-          <span></span>
-          <span></span>
+      <div class="demo-panel" data-animate="demo" aria-label="Animated YDLite workflow preview">
+        <div class="demo-titlebar">
+          <div class="traffic">
+            <span></span>
+            <span></span>
+          </div>
           <strong>YDLite</strong>
+          <span class="demo-dot parse" title="Parse"></span>
+          <span class="demo-dot format" title="Format"></span>
+          <span class="demo-dot download" title="Download"></span>
         </div>
-        <div class="mock-input">
-          <span>https://video.example/watch...</span>
-          <b>Parse</b>
+
+        <div class="demo-input">
+          <div class="demo-url">
+            <span class="demo-url-fill"></span>
+            <b>https://video.example/watch</b>
+          </div>
+          <button class="demo-button" type="button">Parse</button>
         </div>
-        <div class="mock-card">
-          <div class="mock-thumb"></div>
-          <div>
-            <div class="mock-line wide"></div>
-            <div class="mock-line mid"></div>
-            <div class="mock-chip">mp4 + m4a</div>
+
+        <div class="demo-result">
+          <div class="demo-thumb">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" :d="iconPath('play')" />
+            </svg>
+          </div>
+          <div class="demo-meta">
+            <strong>EN_EP.54</strong>
+            <span>mp4 + m4a</span>
+            <div class="demo-pills">
+              <i>yt-dlp</i>
+              <i>AAC</i>
+              <i>720p</i>
+            </div>
           </div>
         </div>
-        <div class="mock-progress"><span></span></div>
-        <div class="mock-stats">
-          <span>68.4%</span>
+
+        <div class="demo-progress">
+          <span class="demo-progress-fill"></span>
+        </div>
+        <div class="demo-status">
+          <span class="demo-progress-text">0%</span>
           <span>4.2 MB/s</span>
           <span>ETA 00:18</span>
         </div>
@@ -162,11 +226,17 @@ onBeforeUnmount(() => {
 
     <section id="features" class="section-shell">
       <div class="section-heading" data-reveal>
-        <p class="eyebrow">What it does</p>
-        <h2>Focused controls, clear outcomes.</h2>
+        <p class="eyebrow">Clear by default</p>
+        <h2>Everything important is visible.</h2>
       </div>
+
       <div class="bento-grid">
-        <article v-for="card in bentoCards" :key="card.title" class="bento-card" :class="card.className" data-reveal>
+        <article v-for="card in bentoCards" :key="card.key" class="bento-card" :class="`card-${card.key}`" data-reveal>
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" :d="iconPath(card.icon)" />
+            </svg>
+          </div>
           <span>{{ card.label }}</span>
           <h3>{{ card.title }}</h3>
           <p>{{ card.body }}</p>
@@ -174,49 +244,26 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="flow-section" data-reveal>
-      <div>
-        <p class="eyebrow">Flow</p>
-        <h2>Three steps, no guessing.</h2>
-      </div>
-      <div class="step-grid">
-        <article v-for="step in steps" :key="step[0]" class="step-card">
-          <span>{{ step[0] }}</span>
-          <h3>{{ step[1] }}</h3>
-          <p>{{ step[2] }}</p>
-        </article>
-      </div>
-    </section>
-
-    <section id="download" class="download-section" data-reveal>
-      <div>
-        <p class="eyebrow">Download</p>
-        <h2>Windows build, ready to try.</h2>
-        <p>
-          The installer includes the latest app changes. Use the in-app Check button only when you want
-          to verify yt-dlp and ffmpeg.
-        </p>
+    <section class="download-section" data-reveal>
+      <div class="download-copy">
+        <p class="eyebrow">Windows build</p>
+        <h2>Small installer. Local workflow.</h2>
       </div>
       <div class="download-card">
-        <span>YDLite 0.1.0</span>
         <a class="button primary" :href="downloadUrl" download>Download .exe</a>
-        <a class="text-link" :href="msiUrl" download>Download MSI</a>
+        <a class="text-link" :href="msiUrl" download>MSI</a>
       </div>
     </section>
 
     <footer class="site-footer">
-      <div>
-        <strong>YDLite</strong>
-        <span>Local-first video downloads for Windows.</span>
-      </div>
+      <strong>YDLite</strong>
       <div class="footer-links">
-        <a :href="githubUrl" target="_blank" rel="noreferrer" aria-label="YDLite on GitHub">
+        <a :href="githubUrl" target="_blank" rel="noreferrer" aria-label="GitHub repository">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor" d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.41-4.04-1.41-.55-1.38-1.34-1.75-1.34-1.75-1.09-.75.08-.74.08-.74 1.21.09 1.85 1.25 1.85 1.25 1.07 1.84 2.82 1.31 3.51 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.31-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.48 5.93.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z" />
           </svg>
-          GitHub
         </a>
-        <a href="#download">Download</a>
+        <a href="#top">Top</a>
       </div>
     </footer>
   </main>
@@ -226,16 +273,16 @@ onBeforeUnmount(() => {
 :root {
   --page: #f4efe7;
   --surface: #fffdfa;
-  --surface-muted: #fbf6ef;
-  --line: #ddd3c7;
+  --surface-2: #fbf6ef;
+  --line: #d9d0c4;
   --ink: #2d2f34;
-  --muted: #696f78;
-  --soft: #9da3af;
+  --muted: #687078;
+  --soft: #a4a9b1;
   --blue: #2e77e5;
   --green: #4f7458;
   --rose: #a24e73;
   --yellow: #8a741f;
-  --shadow: 0 18px 55px rgba(42, 35, 26, 0.08), 0 2px 8px rgba(42, 35, 26, 0.05);
+  --shadow: 0 18px 54px rgba(41, 34, 25, 0.08), 0 2px 8px rgba(41, 34, 25, 0.04);
   color: var(--ink);
   background: var(--page);
   font-family: "Aptos", "Segoe UI", system-ui, sans-serif;
@@ -262,9 +309,14 @@ a {
   text-decoration: none;
 }
 
+button {
+  font: inherit;
+}
+
 svg {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
 }
 
 .landing-page {
@@ -276,7 +328,6 @@ svg {
 .landing-nav,
 .hero-section,
 .section-shell,
-.flow-section,
 .download-section,
 .site-footer {
   width: min(1160px, calc(100% - 40px));
@@ -284,27 +335,26 @@ svg {
 }
 
 .landing-nav {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
-  min-height: 74px;
-  gap: 24px;
+  justify-content: space-between;
+  min-height: 72px;
+  gap: 20px;
 }
 
 .brand,
-.nav-links,
+.nav-actions,
 .hero-actions,
-.trust-row,
-.footer-links,
 .button,
-.nav-download {
+.icon-link,
+.stat-strip,
+.footer-links {
   display: inline-flex;
   align-items: center;
 }
 
 .brand {
   gap: 10px;
-  width: fit-content;
   font-weight: 850;
 }
 
@@ -315,40 +365,48 @@ svg {
   height: 30px;
   border-radius: 50%;
   background: var(--ink);
-  color: #fffdfa;
+  color: var(--surface);
   font-size: 14px;
 }
 
-.nav-links {
-  gap: 26px;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 700;
+.nav-actions {
+  gap: 10px;
 }
 
-.nav-links a:hover,
-.text-link:hover,
-.footer-links a:hover {
-  color: var(--blue);
+.icon-link {
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  transition: transform 160ms ease-out, border-color 160ms ease-out;
 }
 
 .nav-download {
-  justify-self: end;
-  min-height: 38px;
+  min-height: 40px;
   padding: 0 18px;
   border-radius: 999px;
   background: var(--ink);
-  color: #fffdfa;
+  color: var(--surface);
   font-size: 14px;
   font-weight: 850;
+  transition: transform 160ms ease-out;
+}
+
+.icon-link:hover,
+.nav-download:hover,
+.button:hover {
+  transform: translateY(-2px);
 }
 
 .hero-section {
   display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(410px, 1.05fr);
-  gap: clamp(36px, 6vw, 76px);
+  grid-template-columns: minmax(0, 0.9fr) minmax(430px, 1.1fr);
+  gap: clamp(34px, 6vw, 76px);
   align-items: center;
-  padding: clamp(54px, 7vw, 92px) 0 58px;
+  padding: clamp(46px, 7vw, 86px) 0 54px;
 }
 
 .hero-copy {
@@ -358,35 +416,33 @@ svg {
 .eyebrow {
   margin: 0;
   color: var(--blue);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 900;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .hero-copy h1,
 .section-heading h2,
-.flow-section h2,
 .download-section h2 {
-  margin: 18px 0 0;
-  color: var(--ink);
+  margin: 16px 0 0;
   font-family: Georgia, "Times New Roman", serif;
   font-weight: 720;
   letter-spacing: 0;
 }
 
 .hero-copy h1 {
-  max-width: 660px;
-  font-size: clamp(46px, 6.8vw, 80px);
-  line-height: 1.02;
+  max-width: 620px;
+  font-size: clamp(54px, 8vw, 94px);
+  line-height: 0.96;
 }
 
 .hero-lede {
-  max-width: 590px;
+  max-width: 550px;
   margin: 22px 0 0;
   color: var(--muted);
-  font-size: 18px;
-  line-height: 1.7;
+  font-size: 17px;
+  line-height: 1.64;
 }
 
 .hero-actions {
@@ -397,7 +453,6 @@ svg {
 
 .button {
   justify-content: center;
-  gap: 8px;
   min-height: 46px;
   padding: 0 22px;
   border: 1px solid var(--ink);
@@ -405,45 +460,50 @@ svg {
   color: var(--ink);
   font-size: 14px;
   font-weight: 850;
-  transition: transform 160ms ease-out, background 160ms ease-out, color 160ms ease-out;
+  transition: transform 160ms ease-out, background 160ms ease-out;
 }
 
 .button.primary {
   background: var(--ink);
-  color: #fffdfa;
+  color: var(--surface);
 }
 
 .button.ghost {
   background: transparent;
 }
 
-.button:hover,
-.nav-download:hover {
-  transform: translateY(-2px);
-}
-
-.trust-row {
-  gap: 18px;
+.stat-strip {
+  gap: 8px;
   flex-wrap: wrap;
-  margin-top: 22px;
-  color: var(--soft);
-  font-size: 13px;
-  font-weight: 700;
+  margin-top: 26px;
 }
 
-.trust-row span::before {
-  content: "";
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 8px;
-  border-radius: 50%;
-  background: var(--green);
+.stat-strip div {
+  min-width: 112px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
 }
 
-.product-mockup,
+.stat-strip strong,
+.stat-strip span {
+  display: block;
+}
+
+.stat-strip strong {
+  font-size: 15px;
+}
+
+.stat-strip span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.demo-panel,
 .bento-card,
-.step-card,
 .download-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -451,54 +511,87 @@ svg {
   box-shadow: var(--shadow);
 }
 
-.product-mockup {
+.demo-panel {
   padding: 18px;
+  contain: paint;
 }
 
-.mock-titlebar {
-  display: flex;
+.demo-titlebar {
+  display: grid;
+  grid-template-columns: 1fr auto 12px 12px 12px;
   align-items: center;
-  gap: 8px;
-  height: 28px;
+  gap: 9px;
+  height: 30px;
   color: var(--soft);
   font-size: 12px;
 }
 
-.mock-titlebar span {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #e3d8cb;
-}
-
-.mock-titlebar strong {
-  margin-left: auto;
-}
-
-.mock-input {
+.traffic {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 54px;
-  margin-top: 14px;
-  padding: 8px 8px 8px 18px;
+  gap: 7px;
+}
+
+.traffic span,
+.demo-dot {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #d8cec2;
+}
+
+.demo-titlebar strong {
+  color: var(--muted);
+}
+
+.demo-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.demo-url {
+  position: relative;
+  min-width: 0;
+  min-height: 52px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: var(--surface-muted);
-  color: var(--soft);
-  font-size: 13px;
+  background: var(--surface-2);
 }
 
-.mock-input b {
-  padding: 10px 16px;
+.demo-url-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: #e9f0fb;
+}
+
+.demo-url b {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  padding: 17px 18px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo-button {
+  min-height: 52px;
+  border: 0;
   border-radius: 999px;
   background: var(--ink);
-  color: #fffdfa;
-  font-size: 12px;
+  color: var(--surface);
+  cursor: default;
+  font-weight: 850;
+  transform-origin: center;
 }
 
-.mock-card {
+.demo-result {
   display: grid;
   grid-template-columns: 132px minmax(0, 1fr);
   gap: 16px;
@@ -507,165 +600,202 @@ svg {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface-muted);
+  background: var(--surface-2);
+  will-change: transform, opacity;
 }
 
-.mock-thumb {
+.demo-thumb {
+  display: grid;
+  place-items: center;
   aspect-ratio: 16 / 10;
   border-radius: 7px;
-  background: linear-gradient(135deg, rgba(46, 119, 229, 0.16), transparent 58%), #efc0cf;
+  background: #efd0dc;
+  color: var(--rose);
 }
 
-.mock-line {
+.demo-thumb svg {
+  width: 28px;
+  height: 28px;
+}
+
+.demo-meta strong,
+.demo-meta span {
+  display: block;
+}
+
+.demo-meta strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 22px;
+}
+
+.demo-meta span {
+  margin-top: 5px;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.demo-pills {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.demo-pills i {
+  border-radius: 999px;
+  background: #eee6dc;
+  color: var(--muted);
+  padding: 5px 8px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.demo-progress {
   height: 10px;
-  margin-bottom: 13px;
+  margin-top: 20px;
+  overflow: hidden;
   border-radius: 999px;
   background: #e6ded4;
 }
 
-.mock-line.wide {
-  width: 88%;
+.demo-progress-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+  transform: scaleX(0);
+  transform-origin: left center;
 }
 
-.mock-line.mid {
-  width: 62%;
-}
-
-.mock-chip {
-  width: fit-content;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #f5edc9;
-  color: var(--yellow);
+.demo-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 850;
 }
 
-.mock-progress {
-  height: 10px;
-  margin-top: 20px;
-  border-radius: 999px;
-  background: #e6ded4;
-  overflow: hidden;
-}
-
-.mock-progress span {
-  display: block;
-  width: 68%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--blue);
-}
-
-.mock-stats {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 12px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.section-shell,
-.flow-section,
-.download-section {
-  padding: 72px 0;
+.section-shell {
+  padding: 62px 0 76px;
 }
 
 .section-heading {
-  max-width: 680px;
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 30px;
+  align-items: end;
 }
 
 .section-heading h2,
-.flow-section h2,
 .download-section h2 {
-  font-size: clamp(34px, 4.8vw, 56px);
-  line-height: 1.08;
+  font-size: clamp(36px, 5vw, 60px);
+  line-height: 1.04;
 }
 
 .bento-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: minmax(190px, auto);
-  gap: 16px;
-  margin-top: 32px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  gap: 12px;
+  margin-top: 30px;
 }
 
 .bento-card {
-  padding: 24px;
+  min-height: 190px;
+  padding: 22px;
+  box-shadow: none;
 }
 
-.bento-card.wide {
-  grid-column: span 2;
+.card-parse {
+  grid-column: span 5;
 }
 
-.bento-card.tall {
-  grid-row: span 2;
+.card-mp4 {
+  grid-column: span 4;
 }
 
-.bento-card span,
-.download-card > span,
-.step-card span {
+.card-local {
+  grid-column: span 3;
+}
+
+.card-speed,
+.card-cookies,
+.card-queue,
+.card-logs {
+  grid-column: span 3;
+}
+
+.card-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: var(--surface-2);
   color: var(--blue);
-  font-size: 12px;
+}
+
+.card-mp4 .card-icon {
+  color: var(--green);
+}
+
+.card-cookies .card-icon {
+  color: var(--rose);
+}
+
+.card-logs .card-icon {
+  color: var(--yellow);
+}
+
+.bento-card > span {
+  display: block;
+  margin-top: 18px;
+  color: var(--soft);
+  font-size: 11px;
   font-weight: 900;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.bento-card h3,
-.step-card h3 {
-  margin: 18px 0 0;
+.bento-card h3 {
+  margin: 8px 0 0;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 24px;
+  font-size: 23px;
+  line-height: 1.1;
 }
 
-.bento-card p,
-.step-card p,
-.download-section p {
-  margin: 12px 0 0;
+.bento-card p {
+  margin: 10px 0 0;
   color: var(--muted);
-  font-size: 15px;
-  line-height: 1.66;
-}
-
-.flow-section {
-  display: grid;
-  grid-template-columns: 0.72fr 1.28fr;
-  gap: 40px;
-}
-
-.step-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.step-card {
-  padding: 24px;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .download-section {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 44px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 34px;
   align-items: center;
+  padding: 34px 0 62px;
 }
 
 .download-card {
-  padding: 26px;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
 }
 
 .download-card .button {
   width: 100%;
-  margin-top: 20px;
 }
 
 .text-link {
-  display: block;
-  width: fit-content;
-  margin: 16px auto 0;
+  justify-self: center;
   color: var(--blue);
   font-size: 14px;
   font-weight: 850;
@@ -674,60 +804,47 @@ svg {
 .site-footer {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
+  gap: 20px;
   align-items: center;
-  padding: 28px 0 44px;
+  padding: 26px 0 42px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-}
-
-.site-footer strong,
-.site-footer span {
-  display: block;
 }
 
 .site-footer strong {
   color: var(--ink);
 }
 
-.site-footer span {
-  margin-top: 4px;
-  font-size: 13px;
-}
-
 .footer-links {
-  gap: 18px;
+  gap: 16px;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 850;
 }
 
 .footer-links a {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
 }
 
 @media (max-width: 980px) {
-  .landing-nav {
-    grid-template-columns: 1fr auto;
-  }
-
-  .nav-links {
-    display: none;
-  }
-
   .hero-section,
-  .flow-section,
+  .section-heading,
   .download-section {
     grid-template-columns: 1fr;
   }
 
   .bento-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
-  .step-grid {
-    grid-template-columns: 1fr;
+  .card-parse,
+  .card-mp4,
+  .card-local,
+  .card-speed,
+  .card-cookies,
+  .card-queue,
+  .card-logs {
+    grid-column: span 3;
   }
 }
 
@@ -735,7 +852,6 @@ svg {
   .landing-nav,
   .hero-section,
   .section-shell,
-  .flow-section,
   .download-section,
   .site-footer {
     width: min(100% - 28px, 1160px);
@@ -746,7 +862,7 @@ svg {
   }
 
   .hero-copy h1 {
-    font-size: clamp(40px, 13vw, 62px);
+    font-size: clamp(46px, 15vw, 68px);
   }
 
   .hero-actions .button,
@@ -754,19 +870,31 @@ svg {
     width: 100%;
   }
 
-  .product-mockup {
+  .demo-panel {
     padding: 12px;
   }
 
-  .mock-card,
+  .demo-input,
+  .demo-result {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-button {
+    min-height: 46px;
+  }
+
   .bento-grid {
     grid-template-columns: 1fr;
   }
 
-  .bento-card.wide,
-  .bento-card.tall {
+  .card-parse,
+  .card-mp4,
+  .card-local,
+  .card-speed,
+  .card-cookies,
+  .card-queue,
+  .card-logs {
     grid-column: auto;
-    grid-row: auto;
   }
 
   .site-footer {
