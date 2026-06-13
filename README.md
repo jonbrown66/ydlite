@@ -24,7 +24,7 @@ system, or remote database.
 
 Latest landing page:
 
-https://43e18357.ydlite.pages.dev
+https://7ccb4b91.ydlite.pages.dev
 
 Direct files are served from the landing page:
 
