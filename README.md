@@ -1,61 +1,110 @@
 # YDLite
 
-YDLite is a compact Windows desktop downloader for links supported by
-[`yt-dlp`](https://github.com/yt-dlp/yt-dlp). It is built with Tauri 2, Vue 3,
-TypeScript, and Rust.
+**YDLite is a fast Windows video downloader desktop app powered by `yt-dlp` and `ffmpeg`.**
 
-The product goal is simple: paste a link, parse it first, choose an output, and
-download with clear local progress. YDLite does not use a cloud queue, account
-system, or remote database.
+Paste a video URL, preview metadata first, choose a format or playlist items, and download locally with clear progress. YDLite is built for people who want a simple YouTube downloader style workflow without a cloud queue, account login, or heavy browser extension.
+
+[Download YDLite](https://ydlite.pages.dev) · [Report an issue](https://github.com/jonbrown66/ydlite/issues)
+
+## Why YDLite
+
+Many video downloader tools are either command-line only, browser-based, or unclear about what is happening during a download. YDLite wraps the reliability of [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) in a lightweight Windows desktop interface.
+
+YDLite focuses on:
+
+- Fast startup with no automatic `yt-dlp` or `ffmpeg` scan on launch.
+- Local-first downloads: links, cookies, history, and files stay on your machine.
+- Preview before download: title, thumbnail, duration, source, playlist entries, and available formats.
+- Windows-friendly MP4 output with M4A/AAC audio defaults to avoid common Opus playback issues.
+- Visible progress with percent, speed, ETA, total size, output path, and logs.
+- Optional `cookies.txt` support for private, login-gated, or region-limited videos.
 
 ## Features
 
-- Fast Tauri desktop shell with a small Vue frontend.
-- Manual dependency checks for `yt-dlp` and `ffmpeg` instead of slow startup checks.
-- In-app guided installation for missing local tools.
-- Link parsing with title, author, duration, thumbnail, source site, playlist entries, and format data.
-- Compatible MP4 defaults: video downloads prefer `mp4` video with `m4a/AAC` audio before falling back.
-- Optional `cookies.txt` for private or login-gated links.
-- Save-folder selection, default-folder persistence, and recent download history.
-- Live progress with percent, speed, ETA, total size, completion actions, and expandable logs.
-- Playlist item selection with a simple serial queue.
+| Feature | What it does |
+| --- | --- |
+| Link parsing | Reads video metadata before downloading, including playlist information when available. |
+| MP4 defaults | Prefers `mp4` video plus `m4a/AAC` audio for better Windows player compatibility. |
+| Format selection | Choose available video formats or audio-only output when supported by the source. |
+| Playlist control | Select playlist entries and process them through a simple serial queue. |
+| Manual tool check | Check `yt-dlp` and `ffmpeg` only when needed, keeping startup immediate. |
+| Guided setup | Install or update local tools from inside the app. |
+| Cookie support | Use `cookies.txt` when a video requires authentication or stricter access. |
+| Download history | Keep recent completed files with quick access to the output folder. |
 
 ## Download
 
-Latest landing page:
+Get the latest Windows build from the landing page:
 
 https://ydlite.pages.dev
 
-Direct files are served from the landing page:
+Available installer files:
 
 - `YDLite_0.1.0_x64-setup.exe`
 - `YDLite_0.1.0_x64_en-US.msi`
 
+## How It Works
+
+1. Paste a video URL.
+2. Click **Parse** to preview metadata and formats.
+3. Choose a save folder and output mode.
+4. Download with live progress.
+5. Open the finished file or output folder from history.
+
+YDLite delegates extraction and downloading to `yt-dlp`, then uses `ffmpeg` when merging or converting media is required.
+
+## Download Strategy
+
+The default video format selection is designed for Windows playback compatibility:
+
+```text
+bv*[ext=mp4]+ba[ext=m4a]/bv*[vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b
+```
+
+This prioritizes MP4 video with M4A/AAC audio. If a site does not provide those formats, YDLite falls back to the best available `yt-dlp` output.
+
+Downloads also use:
+
+```text
+--merge-output-format mp4 --no-playlist --newline -N 4 --windows-filenames --restrict-filenames
+```
+
 ## Requirements
 
-For development:
+For users:
 
-- Windows 10/11
-- Node.js 20+
-- Rust stable
-- Tauri 2 Windows prerequisites
-
-At runtime, YDLite uses:
-
+- Windows 10 or Windows 11
 - `yt-dlp`
 - `ffmpeg`
 
-YDLite checks tools in this order:
-
-1. `YDLITE_YTDLP` / `YDLITE_FFMPEG` environment variables
-2. `<ydlite.exe directory>/tools/yt-dlp.exe` and `<ydlite.exe directory>/tools/ffmpeg/ffmpeg.exe`
-3. System `PATH`
-
-In-app setup installs tools into:
+YDLite can install tools into:
 
 ```text
 <ydlite.exe directory>\tools\
 ```
+
+Tool lookup order:
+
+1. `YDLITE_YTDLP` and `YDLITE_FFMPEG` environment variables
+2. `<ydlite.exe directory>/tools/yt-dlp.exe`
+3. `<ydlite.exe directory>/tools/ffmpeg/ffmpeg.exe`
+4. System `PATH`
+
+For developers:
+
+- Node.js 20+
+- Rust stable
+- Tauri 2 Windows prerequisites
+
+## Tech Stack
+
+- Tauri 2
+- Vue 3
+- TypeScript
+- Rust
+- Vite
+- GSAP for landing page motion
+- Cloudflare Pages for the landing page
 
 ## Development
 
@@ -77,13 +126,13 @@ Build the landing page:
 npm run build
 ```
 
-Build the Tauri frontend only:
+Build the Tauri frontend:
 
 ```powershell
 npm run build:app
 ```
 
-Build installers:
+Build Windows installers:
 
 ```powershell
 npm run tauri build
@@ -95,31 +144,41 @@ Tauri bundles are generated under:
 src-tauri/target/release/bundle
 ```
 
-## Download Strategy
-
-The default video format selection is designed for Windows playback compatibility:
-
-```text
-bv*[ext=mp4]+ba[ext=m4a]/bv*[vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b
-```
-
-This prioritizes MP4 video with M4A/AAC audio. If a site does not provide those
-formats, YDLite falls back to the best available yt-dlp output.
-
-Downloads also use:
-
-```text
---merge-output-format mp4 --no-playlist --newline -N 4 --windows-filenames --restrict-filenames
-```
-
 ## Project Structure
 
 ```text
-src/                  Vue app and landing page
-src-tauri/src/        Rust commands, downloader, progress parsing, tool setup
+src/                  Vue desktop app and landing page
+src-tauri/src/        Rust commands, downloader, progress parser, tool setup
 src-tauri/icons/      App icon
-public/downloads/     Windows installer files used by the landing page
+public/downloads/     Windows installer files served by the landing page
+public/landing/       Landing page product screenshots
 ```
+
+## FAQ
+
+### Is YDLite a YouTube downloader?
+
+YDLite supports links that `yt-dlp` supports, including many video platforms. Platform availability depends on `yt-dlp`, the source site, and whether the video requires login cookies.
+
+### Does YDLite upload videos or URLs to a server?
+
+No. YDLite is a local Windows desktop app. Downloads run on your machine through `yt-dlp` and `ffmpeg`.
+
+### Why does YDLite prefer MP4 and AAC?
+
+Some Windows players do not handle Opus audio inside downloaded files well. YDLite prefers MP4 video with M4A/AAC audio when available for better out-of-the-box playback.
+
+### Why are tool checks manual?
+
+Startup should feel instant. YDLite does not scan for `yt-dlp` and `ffmpeg` automatically on launch; use the **Check** button when you need to verify or install tools.
+
+### Can YDLite download private videos?
+
+If `yt-dlp` can access the video with cookies, YDLite can use a `cookies.txt` file. Access depends on the source platform and your account permissions.
+
+## Search and AI Summary
+
+YDLite is a Windows video downloader and `yt-dlp` GUI built with Tauri, Vue, TypeScript, and Rust. It is useful for local video downloads, MP4 downloads, playlist downloads, `ffmpeg`-based merging, `cookies.txt` access, and users who want a lightweight desktop alternative to command-line `yt-dlp`.
 
 ## Deployment
 
@@ -130,7 +189,7 @@ npm run build
 npx wrangler pages deploy dist --project-name ydlite --branch main --commit-dirty=true
 ```
 
-Before deploying a new public build, copy fresh Tauri bundles into `public/downloads`.
+Before deploying a public build, copy fresh Tauri bundles into `public/downloads`.
 
 ## License
 

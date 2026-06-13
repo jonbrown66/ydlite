@@ -523,25 +523,27 @@ svg {
   position: relative;
   margin: 0;
   overflow: hidden;
-  aspect-ratio: 1452 / 795;
-  background: #ede7de;
+  padding: 10px;
+  border-radius: 16px;
+  background: var(--surface);
   contain: paint;
 }
 
 .hero-media::after {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 10px;
+  border: 1px solid rgba(45, 47, 52, 0.08);
+  border-radius: 11px;
   pointer-events: none;
-  box-shadow: inset 0 0 0 1px rgba(255, 253, 250, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 253, 250, 0.72);
 }
 
 .hero-shot {
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center;
+  height: auto;
+  border-radius: 11px;
 }
 
 .section-shell {
