@@ -1,15 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { gsap } from 'gsap'
-
 const downloadUrl = '/downloads/YDLite_0.1.0_x64-setup.exe'
 const msiUrl = '/downloads/YDLite_0.1.0_x64_en-US.msi'
 const githubUrl = 'https://github.com/jonbrown66/ydlite'
 const heroImageUrl = '/landing/ydlite-app.png'
-
-const page = ref<HTMLElement | null>(null)
-let context: gsap.Context | null = null
-let observers: IntersectionObserver[] = []
 
 const bentoCards = [
   {
@@ -83,63 +76,11 @@ function iconPath(name: string) {
   }
   return icons[name] || icons.link
 }
-
-onMounted(() => {
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  context = gsap.context(() => {
-    if (reduceMotion) {
-      gsap.set('[data-animate], [data-reveal], .hero-media', { autoAlpha: 1, y: 0, scale: 1 })
-      return
-    }
-
-    const intro = gsap
-      .timeline({ defaults: { ease: 'power3.out' } })
-      .from('[data-animate="nav"]', { y: -14, autoAlpha: 0, duration: 0.42 })
-      .from('[data-animate="hero"] > *', { y: 26, autoAlpha: 0, duration: 0.58, stagger: 0.06 }, '-=0.08')
-      .from('[data-animate="media"]', { y: 34, autoAlpha: 0, scale: 0.98, duration: 0.72 }, '-=0.38')
-
-    intro.call(() => {
-      gsap.to('.hero-media', {
-        y: -8,
-        duration: 3.2,
-        repeat: -1,
-        yoyo: true,
-        ease: 'sine.inOut',
-      })
-    })
-
-    const items = Array.from(page.value?.querySelectorAll<HTMLElement>('[data-reveal]') || [])
-    items.forEach((element) => {
-      gsap.set(element, { y: 22, autoAlpha: 0 })
-      if (element.getBoundingClientRect().top < window.innerHeight * 1.35) {
-        gsap.to(element, { y: 0, autoAlpha: 1, duration: 0.48, ease: 'power3.out', delay: 0.12 })
-        return
-      }
-
-      const observer = new IntersectionObserver(
-        ([entry]) => {
-          if (!entry.isIntersecting) return
-          gsap.to(element, { y: 0, autoAlpha: 1, duration: 0.48, ease: 'power3.out' })
-          observer.disconnect()
-        },
-        { threshold: 0.14 },
-      )
-      observer.observe(element)
-      observers.push(observer)
-    })
-  }, page.value || undefined)
-})
-
-onBeforeUnmount(() => {
-  observers.forEach((observer) => observer.disconnect())
-  observers = []
-  context?.revert()
-})
 </script>
 
 <template>
-  <main ref="page" class="landing-page">
-    <nav class="landing-nav" data-animate="nav">
+  <main id="top" class="landing-page">
+    <nav class="landing-nav">
       <a class="brand" href="#top" aria-label="YDLite home">
         <span class="brand-mark">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -158,15 +99,15 @@ onBeforeUnmount(() => {
       <div class="nav-actions">
         <a class="icon-link github-link" :href="githubUrl" target="_blank" rel="noreferrer" aria-label="GitHub repository">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.41-4.04-1.41-.55-1.38-1.34-1.75-1.34-1.75-1.09-.75.08-.74.08-.74 1.21.09 1.85 1.25 1.85 1.25 1.07 1.84 2.82 1.31 3.51 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.31-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.48 5.93.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z" />
+            <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
           </svg>
         </a>
         <a class="nav-download" :href="downloadUrl" download>Download</a>
       </div>
     </nav>
 
-    <section id="top" class="hero-section">
-      <div class="hero-copy" data-animate="hero">
+    <section class="hero-section">
+      <div class="hero-copy">
         <p class="eyebrow">Local video downloads</p>
         <h1>Paste. Preview. Download.</h1>
         <p class="hero-lede">
@@ -185,19 +126,19 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <figure class="hero-media" data-animate="media">
+      <figure class="hero-media">
         <img class="hero-shot" :src="heroImageUrl" alt="YDLite Windows app with a URL input, manual tool checks, and parse button" />
       </figure>
     </section>
 
     <section id="features" class="section-shell">
-      <div class="section-heading" data-reveal>
+      <div class="section-heading">
         <p class="eyebrow">Clear by default</p>
         <h2>Everything important is visible.</h2>
       </div>
 
       <div class="bento-grid">
-        <article v-for="card in bentoCards" :key="card.key" class="bento-card" :class="`card-${card.key}`" data-reveal>
+        <article v-for="card in bentoCards" :key="card.key" class="bento-card" :class="`card-${card.key}`">
           <div class="card-icon">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" :d="iconPath(card.icon)" />
@@ -210,7 +151,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section id="download" class="download-section" data-reveal>
+    <section id="download" class="download-section">
       <div class="download-copy">
         <p class="eyebrow">Windows build</p>
         <h2>Small installer. Local workflow.</h2>
@@ -226,7 +167,7 @@ onBeforeUnmount(() => {
       <div class="footer-links">
         <a :href="githubUrl" target="_blank" rel="noreferrer" aria-label="GitHub repository">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.41-4.04-1.41-.55-1.38-1.34-1.75-1.34-1.75-1.09-.75.08-.74.08-.74 1.21.09 1.85 1.25 1.85 1.25 1.07 1.84 2.82 1.31 3.51 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.31-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.48 5.93.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z" />
+            <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
           </svg>
         </a>
         <a class="top-link" href="#top" aria-label="Back to top">
@@ -242,20 +183,22 @@ onBeforeUnmount(() => {
 <style>
 :root {
   --page: #f4efe7;
-  --surface: #fffdfa;
-  --surface-2: #fbf6ef;
-  --line: #d9d0c4;
-  --ink: #2d2f34;
-  --muted: #687078;
-  --soft: #a4a9b1;
-  --blue: #2e77e5;
-  --green: #4f7458;
-  --rose: #a24e73;
-  --yellow: #8a741f;
-  --shadow: 0 18px 54px rgba(41, 34, 25, 0.08), 0 2px 8px rgba(41, 34, 25, 0.04);
+  --surface: #fffdf8;
+  --surface-2: #faf7f1;
+  --line: #d9dde6;
+  --line-strong: #c9cfd9;
+  --ink: #41444a;
+  --muted: #676a70;
+  --soft: #9da3af;
+  --blue: #4d6f95;
+  --green: #547358;
+  --rose: #9d4d77;
+  --yellow: #7f6c1f;
+  --shadow: 0 16px 48px rgba(52, 54, 58, 0.04), 0 2px 8px rgba(52, 54, 58, 0.03);
+  --transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
   color: var(--ink);
   background: var(--page);
-  font-family: "Aptos", "Segoe UI", system-ui, sans-serif;
+  font-family: "Aptos", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -327,7 +270,7 @@ svg {
 .brand {
   gap: 10px;
   justify-self: start;
-  font-weight: 850;
+  font-weight: 800;
 }
 
 .brand-mark {
@@ -355,11 +298,11 @@ svg {
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   color: var(--muted);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .nav-links a {
-  transition: color 140ms ease-out;
+  transition: var(--transition);
 }
 
 .nav-links a:hover {
@@ -380,7 +323,7 @@ svg {
   border-radius: 999px;
   background: var(--surface);
   color: var(--ink);
-  transition: transform 160ms ease-out, border-color 160ms ease-out;
+  transition: var(--transition);
 }
 
 .github-link svg {
@@ -399,14 +342,26 @@ svg {
   background: var(--ink);
   color: var(--surface);
   font-size: 14px;
-  font-weight: 850;
-  transition: transform 160ms ease-out;
+  font-weight: 700;
+  transition: var(--transition);
 }
 
 .icon-link:hover,
-.nav-download:hover,
 .button:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(41, 34, 25, 0.05);
+}
+
+.nav-download:hover {
+  transform: translateY(-1px);
+  background: #34363a;
+  box-shadow: 0 6px 18px rgba(41, 34, 25, 0.05);
+}
+
+.icon-link:active,
+.nav-download:active,
+.button:active {
+  transform: translateY(0) scale(0.98);
 }
 
 .hero-section {
@@ -425,7 +380,7 @@ svg {
   margin: 0;
   color: var(--blue);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -435,14 +390,14 @@ svg {
 .download-section h2 {
   margin: 16px 0 0;
   font-family: Georgia, "Times New Roman", serif;
-  font-weight: 720;
-  letter-spacing: 0;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .hero-copy h1 {
   max-width: 620px;
   font-size: clamp(54px, 7vw, 86px);
-  line-height: 0.96;
+  line-height: 1.08;
 }
 
 .hero-lede {
@@ -467,13 +422,17 @@ svg {
   border-radius: 999px;
   color: var(--ink);
   font-size: 14px;
-  font-weight: 850;
-  transition: transform 160ms ease-out, background 160ms ease-out;
+  font-weight: 700;
+  transition: var(--transition);
 }
 
 .button.primary {
   background: var(--ink);
   color: var(--surface);
+}
+
+.button.primary:hover {
+  background: #34363a;
 }
 
 .button.ghost {
@@ -560,7 +519,7 @@ svg {
 .section-heading h2,
 .download-section h2 {
   font-size: clamp(46px, 6vw, 76px);
-  line-height: 0.98;
+  line-height: 1.1;
 }
 
 .bento-grid {
@@ -575,6 +534,13 @@ svg {
   min-height: 190px;
   padding: 22px;
   box-shadow: none;
+  transition: var(--transition);
+}
+
+.bento-card:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  box-shadow: 0 4px 16px rgba(52, 54, 58, 0.02);
 }
 
 .card-parse {
@@ -632,6 +598,7 @@ svg {
   margin: 8px 0 0;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 23px;
+  font-weight: 700;
   line-height: 1.1;
 }
 
@@ -677,12 +644,13 @@ svg {
 
 .site-footer strong {
   color: var(--ink);
+  font-weight: 700;
 }
 
 .footer-links {
   gap: 16px;
   font-size: 14px;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .footer-links a {
@@ -708,12 +676,15 @@ svg {
 
   .landing-nav {
     grid-template-columns: 1fr auto;
+    row-gap: 12px;
+    padding-bottom: 12px;
+    min-height: auto;
   }
 
   .nav-links {
     order: 3;
     grid-column: 1 / -1;
-    justify-self: stretch;
+    justify-self: center;
     justify-content: center;
   }
 
@@ -746,12 +717,15 @@ svg {
   }
 
   .nav-links {
-    gap: 14px;
-    padding-inline: 12px;
+    gap: clamp(6px, 2.2vw, 12px);
+    padding-inline: 10px;
+    font-size: 12px;
+    min-height: 36px;
   }
 
   .hero-copy h1 {
-    font-size: clamp(46px, 15vw, 68px);
+    font-size: clamp(38px, 10vw, 54px);
+    line-height: 1.1;
   }
 
   .hero-actions .button,
