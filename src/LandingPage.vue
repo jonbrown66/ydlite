@@ -1,84 +1,102 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { gsap } from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+
 const downloadUrl = '/downloads/YDLite_0.1.0_x64-setup.exe'
 const msiUrl = '/downloads/YDLite_0.1.0_x64_en-US.msi'
 const githubUrl = 'https://github.com/jonbrown66/ydlite'
 const heroImageUrl = '/landing/ydlite-app.png'
 
-const bentoCards = [
-  {
-    key: 'route',
-    icon: 'link',
-    label: '自动分流',
-    title: '先检查字幕，再决定怎么处理',
-    body: '中文字幕直接提取，外语字幕只翻译，没有字幕才识别音轨。',
-  },
-  {
-    key: 'download',
-    icon: 'play',
-    label: '视频下载',
-    title: '链接解析、格式选择与清晰进度',
-    body: '基于 yt-dlp，支持播放列表、cookies.txt、速度、剩余时间和任务记录。',
-  },
-  {
-    key: 'local',
-    icon: 'shield',
-    label: '本地模式',
-    title: 'Whisper 多语言识别',
-    body: '模型按需下载，支持 CPU 与 NVIDIA CUDA，不安装时不占用空间。',
-  },
-  {
-    key: 'cloud',
-    icon: 'bolt',
-    label: '云端模式',
-    title: 'Gemini 识别与翻译',
-    body: '提供经济与高质量模式，显示费用预估、上传进度和限流等待。',
-  },
-  {
-    key: 'output',
-    icon: 'terminal',
-    label: '可靠输出',
-    title: 'SRT 与字幕视频',
-    body: 'GPU 优先烧录，失败自动回退 CPU；文件校验通过后才显示完成。',
-  },
-  {
-    key: 'recovery',
-    icon: 'list',
-    label: '任务管理',
-    title: '可恢复、可清理、可追踪',
-    body: '保存处理耗时与输出记录，异常退出后可继续，缓存可单独清理。',
-  },
-]
-
-const statItems = [
-  ['本地优先', '视频与项目'],
-  ['3 种', '字幕处理方式'],
-  ['GPU', '自动加速烧录'],
-]
+const pageRoot = ref<HTMLElement | null>(null)
+let animationContext: gsap.Context | undefined
 
 const workflowItems = [
-  ['01', '选择来源', '粘贴视频链接，或导入本地视频。'],
-  ['02', '自动分析', '检查字幕轨道、音轨与语言，选择最省时的路线。'],
-  ['03', '获取结果', '输出中文字幕，并按需生成可直接播放的字幕视频。'],
+  ['01', '选择视频', '粘贴视频链接，或导入本地文件。'],
+  ['02', '自动分析', '检查字幕、音轨与语言，选择更省时的路线。'],
+  ['03', '获得结果', '输出中文字幕，并按需生成字幕视频。'],
+]
+
+const modes = [
+  {
+    name: '本地免费',
+    engine: 'Whisper + 免费翻译',
+    note: '适合不配置 API 的日常使用',
+  },
+  {
+    name: '自定义 AI',
+    engine: 'Whisper + 兼容接口',
+    note: '使用你已有的翻译服务',
+  },
+  {
+    name: 'Gemini 云端',
+    engine: '识别与翻译一体完成',
+    note: '减少本地模型和硬件占用',
+  },
+]
+
+const reliabilityItems = [
+  ['本地与云端自由选择', '模型按需下载，不强制占用空间。'],
+  ['输出经过完整校验', '确认字幕与视频可用后才显示完成。'],
+  ['任务可以继续处理', '保留进度、结果和清理记录。'],
 ]
 
 function iconPath(name: string) {
   const icons: Record<string, string> = {
-    link: 'M10.6 13.4a1 1 0 0 1 0-1.4l3.4-3.4a3 3 0 1 1 4.2 4.2l-1.2 1.2a1 1 0 1 1-1.4-1.4l1.2-1.2a1 1 0 0 0-1.4-1.4L12 13.4a1 1 0 0 1-1.4 0Zm2.8-2.8a1 1 0 0 1 0 1.4L10 15.4a3 3 0 1 1-4.2-4.2L7 10a1 1 0 1 1 1.4 1.4l-1.2 1.2A1 1 0 1 0 8.6 14l3.4-3.4a1 1 0 0 1 1.4 0Z',
-    play: 'M8 5.8c0-.8.9-1.3 1.6-.9l7 4.2c.7.4.7 1.4 0 1.8l-7 4.2A1.1 1.1 0 0 1 8 14.2V5.8Z',
-    shield: 'M12 3 5.5 5.6v5.1c0 4.1 2.8 7.9 6.5 8.9 3.7-1 6.5-4.8 6.5-8.9V5.6L12 3Zm2.9 6.6-3.4 3.4-1.5-1.5a1 1 0 0 0-1.4 1.4l2.2 2.2c.4.4 1 .4 1.4 0l4.1-4.1a1 1 0 0 0-1.4-1.4Z',
-    bolt: 'M13 2 5 13h6l-1 9 8-12h-6l1-8Z',
-    cookie: 'M18.5 10.2A6.9 6.9 0 1 1 13.8 5a2.5 2.5 0 0 0 3.3 3.2 2.5 2.5 0 0 0 1.4 2ZM9 10.2a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm4.2 5.2a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm-4.7 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z',
-    list: 'M7 6h12v2H7V6Zm0 5h12v2H7v-2Zm0 5h12v2H7v-2ZM4 6h1v2H4V6Zm0 5h1v2H4v-2Zm0 5h1v2H4v-2Z',
-    terminal: 'M4 5h16v14H4V5Zm2 2v10h12V7H6Zm2 2.2 2.2 1.8L8 12.8l1.2 1.4 3.8-3.2-3.8-3.2L8 9.2Zm5 4.8h4v-2h-4v2Z',
-    arrowUp: 'M12 4 5.5 10.5l1.4 1.4L11 7.8V20h2V7.8l4.1 4.1 1.4-1.4L12 4Z',
     app: 'M7 3.8h10a3.2 3.2 0 0 1 3.2 3.2v10a3.2 3.2 0 0 1-3.2 3.2H7A3.2 3.2 0 0 1 3.8 17V7A3.2 3.2 0 0 1 7 3.8Zm0 2A1.2 1.2 0 0 0 5.8 7v10A1.2 1.2 0 0 0 7 18.2h10a1.2 1.2 0 0 0 1.2-1.2V7A1.2 1.2 0 0 0 17 5.8H7Zm3.1 3.1 5.2 3.1-5.2 3.1V8.9Z',
+    arrow: 'm9 18 6-6-6-6 1.4-1.4 7.4 7.4-7.4 7.4L9 18Z',
+    arrowUp: 'M12 4 5.5 10.5l1.4 1.4L11 7.8V20h2V7.8l4.1 4.1 1.4-1.4L12 4Z',
+    check: 'm9.1 16.2-4.3-4.3 1.4-1.4 2.9 2.9 8.7-8.7 1.4 1.4-10.1 10.1Z',
   }
-  return icons[name] || icons.link
+  return icons[name] || icons.arrow
 }
+
+onMounted(() => {
+  if (!pageRoot.value || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+  gsap.registerPlugin(ScrollTrigger)
+  animationContext = gsap.context(() => {
+    const introTimeline = gsap.timeline({ defaults: { ease: 'power4.out' } })
+    introTimeline
+      .from('.landing-nav', { y: -16, opacity: 0, duration: 0.55 })
+      .from('.hero-intro > *', { y: 28, opacity: 0, duration: 0.72, stagger: 0.08 }, '-=0.25')
+      .from('.hero-stage', { y: 36, opacity: 0, scale: 0.985, duration: 0.85 }, '-=0.45')
+
+    gsap.utils.toArray<HTMLElement>('[data-reveal]').forEach((element) => {
+      gsap.from(element, {
+        scrollTrigger: {
+          trigger: element,
+          start: 'top 86%',
+          once: true,
+        },
+        y: 30,
+        opacity: 0,
+        duration: 0.7,
+        ease: 'power4.out',
+      })
+    })
+
+    gsap.to('.hero-shot', {
+      yPercent: -1.8,
+      ease: 'none',
+      scrollTrigger: {
+        trigger: '.hero-stage',
+        start: 'top bottom',
+        end: 'bottom top',
+        scrub: 0.7,
+      },
+    })
+  }, pageRoot.value)
+})
+
+onBeforeUnmount(() => {
+  animationContext?.revert()
+  ScrollTrigger.getAll().forEach((trigger) => trigger.kill())
+})
 </script>
 
 <template>
-  <main id="top" class="landing-page">
+  <main id="top" ref="pageRoot" class="landing-page">
     <nav class="landing-nav">
       <a class="brand" href="#top" aria-label="YDLite 首页">
         <span class="brand-mark">
@@ -90,103 +108,161 @@ function iconPath(name: string) {
       </a>
 
       <div class="nav-links" aria-label="主要导航">
-        <a href="#top">产品</a>
         <a href="#workflow">流程</a>
         <a href="#features">功能</a>
-        <a href="#download">下载</a>
+        <a href="#modes">处理方式</a>
       </div>
 
       <div class="nav-actions">
-        <a class="icon-link github-link" :href="githubUrl" target="_blank" rel="noreferrer" aria-label="GitHub repository">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
-          </svg>
-        </a>
-        <a class="nav-download" :href="downloadUrl" download>下载</a>
+        <a class="text-link" :href="githubUrl" target="_blank" rel="noreferrer">GitHub</a>
+        <a class="nav-download" :href="downloadUrl" download>下载 Windows 版</a>
       </div>
     </nav>
 
     <section class="hero-section">
-      <div class="hero-copy">
+      <div class="hero-intro">
         <p class="eyebrow">Windows 视频与字幕工具</p>
-        <h1>下载视频，自动翻译字幕。</h1>
+        <h1>从视频到中文字幕，<br />交给 YDLite。</h1>
         <p class="hero-lede">
-          给一个链接或选择本地视频。YDLite 会先检查已有字幕，没有字幕再识别音轨，
-          自动翻译成中文，并按需生成字幕视频。
+          粘贴链接或选择本地视频。自动检查字幕、识别语言、翻译成中文，
+          并按需生成可以直接播放的字幕视频。
         </p>
         <div class="hero-actions">
-          <a class="button primary" :href="downloadUrl" download>下载 Windows 版</a>
-          <a class="button ghost" href="#workflow">查看流程</a>
-        </div>
-        <div class="stat-strip" aria-label="Product highlights">
-          <div v-for="item in statItems" :key="item[1]">
-            <strong>{{ item[0] }}</strong>
-            <span>{{ item[1] }}</span>
-          </div>
+          <a class="button button-primary" :href="downloadUrl" download>
+            下载 Windows 版
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" :d="iconPath('arrow')" />
+            </svg>
+          </a>
+          <a class="button button-secondary" href="#workflow">了解处理流程</a>
         </div>
       </div>
 
-      <figure class="hero-media">
-        <img class="hero-shot" :src="heroImageUrl" alt="YDLite Windows 应用界面" />
+      <figure class="hero-stage">
+        <div class="stage-bar">
+          <span>YDLite for Windows</span>
+          <span>下载 · 转录 · 翻译 · 字幕视频</span>
+        </div>
+        <div class="stage-viewport">
+          <img class="hero-shot" :src="heroImageUrl" alt="YDLite Windows 应用新版界面" />
+        </div>
+        <figcaption>
+          <span>一个入口完成视频下载与字幕处理</span>
+          <span>本地优先 · 原视频不覆盖</span>
+        </figcaption>
       </figure>
     </section>
 
-    <section id="workflow" class="workflow-section">
-      <div class="workflow-heading">
-        <p class="eyebrow">一条简单链路</p>
-        <h2>从视频到中文字幕，只需三步。</h2>
-      </div>
+    <section id="workflow" class="workflow-section" data-reveal>
+      <header class="section-intro">
+        <p class="eyebrow">简单的一条链路</p>
+        <h2>不需要先理解模型和参数。</h2>
+        <p>选择视频之后，YDLite 会判断该提取字幕、翻译文本，还是重新识别音轨。</p>
+      </header>
+
       <ol class="workflow-list">
         <li v-for="item in workflowItems" :key="item[0]">
-          <span>{{ item[0] }}</span>
-          <div>
-            <strong>{{ item[1] }}</strong>
-            <p>{{ item[2] }}</p>
-          </div>
+          <span class="step-number">{{ item[0] }}</span>
+          <strong>{{ item[1] }}</strong>
+          <p>{{ item[2] }}</p>
         </li>
       </ol>
     </section>
 
-    <section id="features" class="section-shell">
-      <div class="section-heading">
-        <p class="eyebrow">需要的功能，清楚可见</p>
-        <h2>本地、免费或云端，由你选择。</h2>
-      </div>
+    <section id="features" class="feature-section">
+      <article class="route-feature" data-reveal>
+        <div class="route-copy">
+          <p class="eyebrow">自动选择处理路线</p>
+          <h2>先看有没有字幕，<br />再决定下一步。</h2>
+          <p>
+            中文字幕直接提取，外语字幕只翻译文本；没有可用字幕时，才从音轨重新识别。
+          </p>
+        </div>
 
-      <div class="bento-grid">
-        <article v-for="card in bentoCards" :key="card.key" class="bento-card" :class="`card-${card.key}`">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" :d="iconPath(card.icon)" />
-            </svg>
+        <div class="route-map" aria-label="字幕自动处理路线">
+          <div class="route-source">
+            <span>输入</span>
+            <strong>视频文件</strong>
           </div>
-          <span>{{ card.label }}</span>
-          <h3>{{ card.title }}</h3>
-          <p>{{ card.body }}</p>
+          <div class="route-branches">
+            <div>
+              <span>已有中文字幕</span>
+              <strong>直接提取</strong>
+            </div>
+            <div>
+              <span>已有外语字幕</span>
+              <strong>只翻译文本</strong>
+            </div>
+            <div>
+              <span>没有字幕</span>
+              <strong>识别音轨</strong>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <div class="reliability-panel" data-reveal>
+        <div class="panel-heading">
+          <p class="eyebrow">处理过程更可靠</p>
+          <h2>看得见进度，也拿得到结果。</h2>
+        </div>
+        <div class="reliability-list">
+          <article v-for="item in reliabilityItems" :key="item[0]">
+            <span class="check-mark">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" :d="iconPath('check')" />
+              </svg>
+            </span>
+            <div>
+              <h3>{{ item[0] }}</h3>
+              <p>{{ item[1] }}</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="modes" class="modes-section" data-reveal>
+      <header class="section-intro compact">
+        <p class="eyebrow">三种处理方式</p>
+        <h2>选择适合你的方式。</h2>
+      </header>
+
+      <div class="mode-table">
+        <article v-for="(mode, index) in modes" :key="mode.name">
+          <span>0{{ index + 1 }}</span>
+          <div>
+            <h3>{{ mode.name }}</h3>
+            <strong>{{ mode.engine }}</strong>
+            <p>{{ mode.note }}</p>
+          </div>
         </article>
       </div>
     </section>
 
-    <section id="download" class="download-section">
-      <div class="download-copy">
+    <section id="download" class="download-section" data-reveal>
+      <div>
         <p class="eyebrow">Windows x64</p>
-        <h2>安装很小，能力按需下载。</h2>
+        <h2>现在开始处理你的视频。</h2>
+        <p>应用本体保持轻量，本地模型和加速组件都由你按需下载。</p>
       </div>
-      <div class="download-card">
-        <a class="button download-option" :href="downloadUrl" download>EXE 安装包</a>
-        <a class="button download-option" :href="msiUrl" download>MSI 安装包</a>
+      <div class="download-actions">
+        <a class="button download-primary" :href="downloadUrl" download>
+          下载 Windows 版
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" :d="iconPath('arrow')" />
+          </svg>
+        </a>
+        <a class="msi-link" :href="msiUrl" download>下载 MSI 安装包</a>
       </div>
     </section>
 
     <footer class="site-footer">
       <strong>YDLite</strong>
-      <div class="footer-links">
-        <a :href="githubUrl" target="_blank" rel="noreferrer" aria-label="GitHub repository">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
-          </svg>
-        </a>
-        <a class="top-link" href="#top" aria-label="Back to top">
+      <p>视频下载与字幕处理工具</p>
+      <div>
+        <a :href="githubUrl" target="_blank" rel="noreferrer">GitHub</a>
+        <a class="top-link" href="#top" aria-label="返回顶部">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor" :d="iconPath('arrowUp')" />
           </svg>
@@ -200,18 +276,15 @@ function iconPath(name: string) {
 :root {
   --page: #f4efe7;
   --surface: #fffdf8;
-  --surface-2: #faf7f1;
-  --line: #d9dde6;
-  --line-strong: #c9cfd9;
-  --ink: #41444a;
-  --muted: #676a70;
-  --soft: #9da3af;
-  --blue: #4d6f95;
-  --green: #547358;
-  --rose: #9d4d77;
-  --yellow: #7f6c1f;
-  --shadow: 0 16px 48px rgba(52, 54, 58, 0.04), 0 2px 8px rgba(52, 54, 58, 0.03);
-  --transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  --surface-soft: #ece6dc;
+  --ink: #3f4044;
+  --ink-deep: #2f3033;
+  --muted: #6c6964;
+  --soft: #98928a;
+  --line: #d8d1c6;
+  --line-strong: #bfb6aa;
+  --accent: #806d56;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   color: var(--ink);
   background: var(--page);
   font-family: "Aptos", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
@@ -238,10 +311,6 @@ a {
   text-decoration: none;
 }
 
-button {
-  font: inherit;
-}
-
 svg {
   width: 18px;
   height: 18px;
@@ -251,25 +320,28 @@ svg {
 .landing-page {
   min-height: 100vh;
   overflow-x: hidden;
-  background: var(--page);
+  background:
+    radial-gradient(circle at 50% 8%, rgba(255, 253, 248, 0.76), transparent 34rem),
+    var(--page);
 }
 
 .landing-nav,
 .hero-section,
 .workflow-section,
-.section-shell,
+.feature-section,
+.modes-section,
 .download-section,
 .site-footer {
-  width: min(1160px, calc(100% - 40px));
-  margin: 0 auto;
+  width: min(1180px, calc(100% - 48px));
+  margin-inline: auto;
 }
 
 .landing-nav {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  min-height: 72px;
-  gap: 20px;
+  min-height: 76px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
 }
 
 .brand,
@@ -277,26 +349,26 @@ svg {
 .nav-actions,
 .hero-actions,
 .button,
-.icon-link,
-.stat-strip,
-.footer-links {
-  display: inline-flex;
+.download-actions,
+.site-footer > div {
+  display: flex;
   align-items: center;
 }
 
 .brand {
+  width: fit-content;
   gap: 10px;
-  justify-self: start;
+  font-size: 1rem;
   font-weight: 800;
 }
 
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: var(--ink);
+  background: var(--ink-deep);
   color: var(--surface);
 }
 
@@ -307,183 +379,102 @@ svg {
 
 .nav-links {
   justify-self: center;
-  gap: 22px;
-  min-height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  gap: 28px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.84rem;
   font-weight: 700;
 }
 
-.nav-links a {
-  transition: var(--transition);
+.nav-links a,
+.text-link,
+.msi-link,
+.site-footer a {
+  transition:
+    color 180ms var(--ease-out),
+    opacity 180ms var(--ease-out);
 }
 
-.nav-links a:hover {
-  color: var(--blue);
+.nav-links a:hover,
+.text-link:hover,
+.msi-link:hover,
+.site-footer a:hover {
+  color: var(--ink-deep);
 }
 
 .nav-actions {
   justify-self: end;
-  gap: 10px;
-  align-items: center;
+  gap: 18px;
 }
 
-.icon-link {
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  transition: var(--transition);
-}
-
-.github-link svg {
-  width: 20px;
-  height: 20px;
-  transform: translateY(-0.5px);
+.text-link {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .nav-download {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 40px;
-  padding: 0 18px;
+  min-height: 40px;
+  padding-inline: 17px;
   border-radius: 999px;
-  background: var(--ink);
+  background: var(--ink-deep);
   color: var(--surface);
-  font-size: 14px;
-  font-weight: 700;
-  transition: var(--transition);
-}
-
-.icon-link:hover,
-.button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(41, 34, 25, 0.05);
+  font-size: 0.84rem;
+  font-weight: 750;
+  transition:
+    transform 180ms var(--ease-out),
+    background-color 180ms var(--ease-out);
 }
 
 .nav-download:hover {
   transform: translateY(-1px);
-  background: #34363a;
-  box-shadow: 0 6px 18px rgba(41, 34, 25, 0.05);
-}
-
-.icon-link:active,
-.nav-download:active,
-.button:active {
-  transform: translateY(0) scale(0.98);
+  background: #222326;
 }
 
 .hero-section {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(430px, 1.1fr);
-  gap: clamp(34px, 6vw, 76px);
-  align-items: center;
-  padding: clamp(46px, 7vw, 86px) 0 54px;
+  padding: clamp(64px, 9vw, 112px) 0 clamp(72px, 9vw, 116px);
 }
 
-.workflow-section,
-.section-shell,
-.download-section {
-  scroll-margin-top: 24px;
-}
-
-.workflow-section {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
-  gap: clamp(40px, 8vw, 112px);
-  padding: 70px 0 68px;
-  border-top: 1px solid var(--line);
-}
-
-.workflow-heading h2 {
-  max-width: 9ch;
-  margin: 16px 0 0;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(40px, 5vw, 64px);
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-}
-
-.workflow-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.workflow-list li {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 18px;
-  padding: 22px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.workflow-list li:first-child {
-  padding-top: 0;
-}
-
-.workflow-list li > span {
-  color: var(--blue);
-  font-size: 0.75rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.workflow-list strong {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.45rem;
-}
-
-.workflow-list p {
-  max-width: 42ch;
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.6;
-}
-
-.hero-copy {
-  max-width: 650px;
+.hero-intro {
+  max-width: 900px;
 }
 
 .eyebrow {
   margin: 0;
-  color: var(--blue);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.hero-copy h1,
-.section-heading h2,
+.hero-intro h1,
+.section-intro h2,
+.route-copy h2,
+.panel-heading h2,
 .download-section h2 {
-  margin: 16px 0 0;
-  font-family: Georgia, "Times New Roman", serif;
+  color: var(--ink-deep);
+  font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
 }
 
-.hero-copy h1 {
-  max-width: 620px;
-  font-size: clamp(54px, 7vw, 86px);
-  line-height: 1.08;
+.hero-intro h1 {
+  max-width: 12ch;
+  margin: 18px 0 0;
+  font-size: clamp(3.25rem, 7.2vw, 6.4rem);
+  line-height: 1.04;
 }
 
 .hero-lede {
-  max-width: 550px;
-  margin: 22px 0 0;
+  max-width: 660px;
+  margin: 24px 0 0;
   color: var(--muted);
-  font-size: 17px;
-  line-height: 1.64;
+  font-size: clamp(1rem, 1.6vw, 1.14rem);
+  line-height: 1.72;
 }
 
 .hero-actions {
@@ -494,351 +485,611 @@ svg {
 
 .button {
   justify-content: center;
-  min-height: 46px;
-  padding: 0 22px;
-  border: 1px solid var(--ink);
+  min-height: 48px;
+  padding: 0 21px;
+  border: 1px solid var(--ink-deep);
   border-radius: 999px;
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 700;
-  transition: var(--transition);
+  font-size: 0.88rem;
+  font-weight: 750;
+  transition:
+    transform 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out),
+    background-color 180ms var(--ease-out);
 }
 
-.button.primary {
-  background: var(--ink);
+.button:hover {
+  transform: translateY(-2px);
+}
+
+.button:active,
+.nav-download:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.button-primary {
+  gap: 12px;
+  background: var(--ink-deep);
   color: var(--surface);
 }
 
-.button.primary:hover {
-  background: #34363a;
+.button-primary:hover {
+  background: #222326;
+  box-shadow: 0 12px 30px rgba(38, 35, 31, 0.12);
 }
 
-.button.ghost {
+.button-secondary {
   background: transparent;
+  color: var(--ink-deep);
 }
 
-.stat-strip {
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 26px;
+.button-secondary:hover {
+  background: rgba(255, 253, 248, 0.48);
 }
 
-.stat-strip div {
-  min-width: 112px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.stat-strip strong,
-.stat-strip span {
-  display: block;
-}
-
-.stat-strip strong {
-  font-size: 15px;
-}
-
-.stat-strip span {
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.hero-media,
-.bento-card,
-.download-card {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-
-.hero-media {
-  position: relative;
-  margin: 0;
+.hero-stage {
+  margin: clamp(48px, 6vw, 72px) 0 0;
   overflow: hidden;
-  padding: 10px;
-  border-radius: 16px;
-  background: var(--surface);
-  contain: paint;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: var(--ink-deep);
+  box-shadow: 0 30px 80px rgba(50, 45, 39, 0.13);
 }
 
-.hero-media::after {
-  content: "";
-  position: absolute;
-  inset: 10px;
-  border: 1px solid rgba(45, 47, 52, 0.08);
-  border-radius: 11px;
-  pointer-events: none;
-  box-shadow: inset 0 1px 0 rgba(255, 253, 250, 0.72);
+.stage-bar,
+.hero-stage figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  color: #d8d1c7;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.stage-bar {
+  padding: 14px 18px;
+}
+
+.stage-viewport {
+  overflow: hidden;
+  margin-inline: 10px;
+  border-radius: 10px;
+  background: #e8edf3;
 }
 
 .hero-shot {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: 11px;
+  transform: scale(1.012);
+  transform-origin: center top;
 }
 
-.section-shell {
-  padding: 62px 0 76px;
+.hero-stage figcaption {
+  margin: 0;
+  padding: 14px 18px 16px;
+  color: #aaa49c;
 }
 
-.section-heading {
+.workflow-section,
+.feature-section,
+.modes-section,
+.download-section {
+  scroll-margin-top: 30px;
+}
+
+.workflow-section {
   display: grid;
-  grid-template-columns: 0.9fr 1.1fr;
-  gap: 30px;
-  align-items: end;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(48px, 8vw, 112px);
+  padding: clamp(72px, 9vw, 112px) 0;
+  border-top: 1px solid var(--line);
 }
 
-.section-heading h2,
-.download-section h2 {
-  font-size: clamp(46px, 6vw, 76px);
-  line-height: 1.1;
+.section-intro h2,
+.route-copy h2,
+.panel-heading h2 {
+  margin: 16px 0 0;
+  font-size: clamp(2.5rem, 5vw, 4.6rem);
+  line-height: 1.08;
 }
 
-.bento-grid {
+.section-intro > p:last-child,
+.route-copy > p:last-child,
+.download-section > div > p:last-child {
+  max-width: 50ch;
+  margin: 20px 0 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.workflow-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-list li {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-auto-flow: dense;
-  gap: 12px;
-  margin-top: 30px;
+  grid-template-columns: 44px minmax(120px, 0.55fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: baseline;
+  padding: 25px 0;
+  border-bottom: 1px solid var(--line);
 }
 
-.bento-card {
-  min-height: 190px;
-  padding: 22px;
-  box-shadow: none;
-  transition: var(--transition);
+.workflow-list li:first-child {
+  padding-top: 0;
 }
 
-.bento-card:hover {
-  border-color: var(--line-strong);
-  background: var(--surface-2);
-  box-shadow: 0 4px 16px rgba(52, 54, 58, 0.02);
+.step-number {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
 }
 
-.card-route {
-  grid-column: span 5;
+.workflow-list strong {
+  color: var(--ink-deep);
+  font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+  font-size: 1.45rem;
 }
 
-.card-download {
-  grid-column: span 4;
+.workflow-list p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
 }
 
-.card-local {
-  grid-column: span 3;
+.feature-section {
+  padding: 0 0 clamp(80px, 10vw, 128px);
 }
 
-.card-cloud,
-.card-output,
-.card-recovery {
-  grid-column: span 4;
+.route-feature {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
+  gap: clamp(48px, 8vw, 108px);
+  align-items: center;
+  padding: clamp(38px, 6vw, 72px);
+  border-radius: 20px;
+  background: var(--ink-deep);
+  color: var(--surface);
 }
 
-.card-icon {
+.route-copy h2 {
+  color: var(--surface);
+}
+
+.route-copy > p:last-child {
+  color: #bbb5ad;
+}
+
+.route-feature .eyebrow {
+  color: #b9a68d;
+}
+
+.route-map {
+  position: relative;
+  display: grid;
+  grid-template-columns: 0.72fr 1.28fr;
+  gap: 28px;
+  align-items: center;
+}
+
+.route-map::before {
+  content: "";
+  position: absolute;
+  left: calc(36% - 15px);
+  width: 28px;
+  height: 1px;
+  background: #6c6862;
+}
+
+.route-source,
+.route-branches > div {
+  padding: 18px;
+  border: 1px solid #5a5752;
+  border-radius: 12px;
+  background: #38393c;
+}
+
+.route-branches {
+  display: grid;
+  gap: 10px;
+}
+
+.route-map span,
+.route-map strong {
+  display: block;
+}
+
+.route-map span {
+  color: #aaa49c;
+  font-size: 0.72rem;
+}
+
+.route-map strong {
+  margin-top: 6px;
+  color: #f4efe7;
+  font-size: 0.96rem;
+}
+
+.reliability-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(44px, 8vw, 110px);
+  padding: clamp(72px, 9vw, 112px) 0 0;
+}
+
+.panel-heading h2 {
+  max-width: 11ch;
+}
+
+.reliability-list {
+  border-top: 1px solid var(--line);
+}
+
+.reliability-list article {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 18px;
+  padding: 25px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.check-mark {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--blue);
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--accent);
 }
 
-.card-download .card-icon {
-  color: var(--green);
+.check-mark svg {
+  width: 16px;
+  height: 16px;
 }
 
-.card-cloud .card-icon {
-  color: var(--rose);
+.reliability-list h3 {
+  margin: 0;
+  color: var(--ink-deep);
+  font-size: 1.05rem;
 }
 
-.card-output .card-icon {
-  color: var(--yellow);
-}
-
-.bento-card > span {
-  display: block;
-  margin-top: 18px;
-  color: var(--soft);
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.bento-card h3 {
-  margin: 8px 0 0;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 23px;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.bento-card p {
-  margin: 10px 0 0;
+.reliability-list p {
+  margin: 7px 0 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.modes-section {
+  padding: clamp(72px, 9vw, 108px) 0;
+  border-top: 1px solid var(--line);
+}
+
+.section-intro.compact {
+  max-width: 720px;
+}
+
+.mode-table {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: clamp(38px, 5vw, 58px);
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.mode-table article {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 16px;
+  min-height: 210px;
+  padding: 28px;
+  border-left: 1px solid var(--line);
+}
+
+.mode-table article:first-child {
+  border-left: 0;
+}
+
+.mode-table article > span {
+  color: var(--soft);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.mode-table h3 {
+  margin: 0;
+  color: var(--ink-deep);
+  font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+  font-size: 1.65rem;
+}
+
+.mode-table strong {
+  display: block;
+  margin-top: 24px;
+  font-size: 0.92rem;
+}
+
+.mode-table p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
   line-height: 1.55;
 }
 
 .download-section {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 34px;
-  align-items: center;
-  padding: 34px 0 62px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 40px;
+  align-items: end;
+  margin-bottom: 54px;
+  padding: clamp(44px, 7vw, 76px);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(54, 48, 41, 0.07);
 }
 
-.download-card {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  padding: 14px;
-  align-items: center;
+.download-section h2 {
+  max-width: 12ch;
+  margin: 15px 0 0;
+  font-size: clamp(2.8rem, 5vw, 4.8rem);
+  line-height: 1.05;
 }
 
-.download-option {
-  width: 100%;
-  min-height: 46px;
-  line-height: 1;
-  background: var(--surface-2);
+.download-actions {
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 230px;
+  gap: 16px;
+}
+
+.download-primary {
+  gap: 12px;
+  background: var(--ink-deep);
+  color: var(--surface);
+}
+
+.download-primary:hover {
+  background: #222326;
+  box-shadow: 0 12px 30px rgba(38, 35, 31, 0.12);
+}
+
+.msi-link {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 4px;
 }
 
 .site-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 24px;
   align-items: center;
-  padding: 26px 0 42px;
+  padding: 30px 0 44px;
   border-top: 1px solid var(--line);
   color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .site-footer strong {
-  color: var(--ink);
-  font-weight: 700;
+  color: var(--ink-deep);
 }
 
-.footer-links {
-  gap: 16px;
-  font-size: 14px;
-  font-weight: 700;
+.site-footer p {
+  margin: 0;
 }
 
-.footer-links a {
-  display: inline-flex;
-  align-items: center;
+.site-footer > div {
+  gap: 18px;
+  font-weight: 700;
 }
 
 .top-link {
-  justify-content: center;
-  width: 36px;
-  height: 36px;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--surface);
 }
 
-@media (max-width: 980px) {
-  .hero-section,
+.top-link svg {
+  width: 17px;
+  height: 17px;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--ink-deep);
+  outline-offset: 4px;
+}
+
+@media (max-width: 900px) {
+  .landing-nav {
+    grid-template-columns: 1fr auto;
+  }
+
+  .nav-links {
+    display: none;
+  }
+
+  .hero-intro h1 {
+    max-width: 14ch;
+  }
+
   .workflow-section,
-  .section-heading,
+  .route-feature,
+  .reliability-panel,
   .download-section {
     grid-template-columns: 1fr;
   }
 
-  .landing-nav {
-    grid-template-columns: 1fr auto;
-    row-gap: 12px;
-    padding-bottom: 12px;
+  .route-map {
+    max-width: 640px;
+  }
+
+  .mode-table {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-table article {
     min-height: auto;
+    border-top: 1px solid var(--line);
+    border-left: 0;
   }
 
-  .nav-links {
-    order: 3;
-    grid-column: 1 / -1;
-    justify-self: center;
-    justify-content: center;
+  .mode-table article:first-child {
+    border-top: 0;
   }
 
-  .bento-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-
-  .card-route,
-  .card-download,
-  .card-local,
-  .card-cloud,
-  .card-output,
-  .card-recovery {
-    grid-column: span 3;
+  .download-actions {
+    align-items: flex-start;
   }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 620px) {
   .landing-nav,
   .hero-section,
   .workflow-section,
-  .section-shell,
+  .feature-section,
+  .modes-section,
   .download-section,
   .site-footer {
-    width: min(100% - 28px, 1160px);
+    width: min(100% - 28px, 1180px);
   }
 
-  .nav-download {
+  .landing-nav {
+    min-height: 66px;
+  }
+
+  .text-link {
     display: none;
   }
 
-  .nav-links {
-    gap: clamp(6px, 2.2vw, 12px);
-    padding-inline: 10px;
-    font-size: 12px;
-    min-height: 36px;
+  .nav-download {
+    min-height: 38px;
+    padding-inline: 14px;
+    font-size: 0.78rem;
   }
 
-  .hero-copy h1 {
-    font-size: clamp(38px, 10vw, 54px);
-    line-height: 1.1;
+  .hero-section {
+    padding-top: 52px;
   }
 
-  .hero-actions .button,
-  .download-card {
+  .hero-intro h1 {
+    margin-top: 14px;
+    font-size: clamp(2.75rem, 13vw, 4.2rem);
+  }
+
+  .hero-lede {
+    margin-top: 20px;
+    font-size: 1rem;
+  }
+
+  .hero-actions,
+  .hero-actions .button {
     width: 100%;
   }
 
-  .download-card {
+  .hero-actions {
+    display: grid;
+  }
+
+  .hero-stage {
+    margin-top: 38px;
+    border-radius: 13px;
+  }
+
+  .stage-bar,
+  .hero-stage figcaption {
+    padding: 11px 12px;
+    font-size: 0.67rem;
+  }
+
+  .stage-bar span:last-child,
+  .hero-stage figcaption span:last-child {
+    display: none;
+  }
+
+  .stage-viewport {
+    margin-inline: 6px;
+    border-radius: 8px;
+  }
+
+  .workflow-section {
+    gap: 42px;
+  }
+
+  .section-intro h2,
+  .route-copy h2,
+  .panel-heading h2 {
+    font-size: clamp(2.4rem, 12vw, 3.4rem);
+  }
+
+  .workflow-list li {
+    grid-template-columns: 36px 1fr;
+    gap: 12px;
+  }
+
+  .workflow-list p {
+    grid-column: 2;
+  }
+
+  .route-feature {
+    gap: 42px;
+    padding: 34px 24px;
+    border-radius: 16px;
+  }
+
+  .route-map {
     grid-template-columns: 1fr;
   }
 
-  .hero-media {
-    min-height: 300px;
+  .route-map::before {
+    display: none;
   }
 
-  .hero-shot {
-    object-position: left top;
+  .reliability-panel {
+    gap: 34px;
   }
 
-  .bento-grid {
-    grid-template-columns: 1fr;
+  .mode-table article {
+    grid-template-columns: 28px 1fr;
+    padding: 24px 8px;
   }
 
-  .card-route,
-  .card-download,
-  .card-local,
-  .card-cloud,
-  .card-output,
-  .card-recovery {
-    grid-column: auto;
+  .download-section {
+    width: calc(100% - 28px);
+    gap: 32px;
+    padding: 34px 24px;
+    border-radius: 16px;
+  }
+
+  .download-section h2 {
+    font-size: clamp(2.5rem, 12vw, 3.6rem);
+  }
+
+  .download-actions,
+  .download-primary {
+    width: 100%;
   }
 
   .site-footer {
-    align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: 1fr auto;
+  }
+
+  .site-footer p {
+    display: none;
   }
 }
 
