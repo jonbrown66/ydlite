@@ -6,60 +6,59 @@ const heroImageUrl = '/landing/ydlite-app.png'
 
 const bentoCards = [
   {
-    key: 'parse',
+    key: 'route',
     icon: 'link',
-    label: 'Parse',
-    title: 'Preview before download',
-    body: 'Title, duration, source, thumbnail, playlist entries, and formats.',
+    label: '自动分流',
+    title: '先检查字幕，再决定怎么处理',
+    body: '中文字幕直接提取，外语字幕只翻译，没有字幕才识别音轨。',
   },
   {
-    key: 'mp4',
+    key: 'download',
     icon: 'play',
-    label: 'MP4',
-    title: 'Windows-friendly output',
-    body: 'Prefers MP4 video with M4A/AAC audio to avoid Opus playback issues.',
+    label: '视频下载',
+    title: '链接解析、格式选择与清晰进度',
+    body: '基于 yt-dlp，支持播放列表、cookies.txt、速度、剩余时间和任务记录。',
   },
   {
     key: 'local',
     icon: 'shield',
-    label: 'Local',
-    title: 'No cloud queue',
-    body: 'yt-dlp and ffmpeg run on your PC.',
+    label: '本地模式',
+    title: 'Whisper 多语言识别',
+    body: '模型按需下载，支持 CPU 与 NVIDIA CUDA，不安装时不占用空间。',
   },
   {
-    key: 'speed',
+    key: 'cloud',
     icon: 'bolt',
-    label: 'Fast',
-    title: 'Opens quickly',
-    body: 'No default dependency scan on launch.',
+    label: '云端模式',
+    title: 'Gemini 识别与翻译',
+    body: '提供经济与高质量模式，显示费用预估、上传进度和限流等待。',
   },
   {
-    key: 'cookies',
-    icon: 'cookie',
-    label: 'Access',
-    title: 'Cookies when needed',
-    body: 'Keep private-link support out of the primary path.',
-  },
-  {
-    key: 'queue',
-    icon: 'list',
-    label: 'Queue',
-    title: 'Playlist control',
-    body: 'Pick items, then watch a simple serial queue.',
-  },
-  {
-    key: 'logs',
+    key: 'output',
     icon: 'terminal',
-    label: 'Logs',
-    title: 'Readable progress',
-    body: 'Percent, speed, ETA, finished file, and expandable details.',
+    label: '可靠输出',
+    title: 'SRT 与字幕视频',
+    body: 'GPU 优先烧录，失败自动回退 CPU；文件校验通过后才显示完成。',
+  },
+  {
+    key: 'recovery',
+    icon: 'list',
+    label: '任务管理',
+    title: '可恢复、可清理、可追踪',
+    body: '保存处理耗时与输出记录，异常退出后可继续，缓存可单独清理。',
   },
 ]
 
 const statItems = [
-  ['3.6 MB', 'installer'],
-  ['Manual', 'tool checks'],
-  ['AAC', 'default audio'],
+  ['本地优先', '视频与项目'],
+  ['3 种', '字幕处理方式'],
+  ['GPU', '自动加速烧录'],
+]
+
+const workflowItems = [
+  ['01', '选择来源', '粘贴视频链接，或导入本地视频。'],
+  ['02', '自动分析', '检查字幕轨道、音轨与语言，选择最省时的路线。'],
+  ['03', '获取结果', '输出中文字幕，并按需生成可直接播放的字幕视频。'],
 ]
 
 function iconPath(name: string) {
@@ -81,7 +80,7 @@ function iconPath(name: string) {
 <template>
   <main id="top" class="landing-page">
     <nav class="landing-nav">
-      <a class="brand" href="#top" aria-label="YDLite home">
+      <a class="brand" href="#top" aria-label="YDLite 首页">
         <span class="brand-mark">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor" :d="iconPath('app')" />
@@ -90,10 +89,11 @@ function iconPath(name: string) {
         <span>YDLite</span>
       </a>
 
-      <div class="nav-links" aria-label="Primary navigation">
-        <a href="#top">Demo</a>
-        <a href="#features">Features</a>
-        <a href="#download">Download</a>
+      <div class="nav-links" aria-label="主要导航">
+        <a href="#top">产品</a>
+        <a href="#workflow">流程</a>
+        <a href="#features">功能</a>
+        <a href="#download">下载</a>
       </div>
 
       <div class="nav-actions">
@@ -102,21 +102,21 @@ function iconPath(name: string) {
             <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
           </svg>
         </a>
-        <a class="nav-download" :href="downloadUrl" download>Download</a>
+        <a class="nav-download" :href="downloadUrl" download>下载</a>
       </div>
     </nav>
 
     <section class="hero-section">
       <div class="hero-copy">
-        <p class="eyebrow">Local video downloads</p>
-        <h1>Paste. Preview. Download.</h1>
+        <p class="eyebrow">Windows 视频与字幕工具</p>
+        <h1>下载视频，自动翻译字幕。</h1>
         <p class="hero-lede">
-          YDLite wraps yt-dlp in a fast Windows app with visible progress, compatible MP4 defaults,
-          and tools that stay on your machine.
+          给一个链接或选择本地视频。YDLite 会先检查已有字幕，没有字幕再识别音轨，
+          自动翻译成中文，并按需生成字幕视频。
         </p>
         <div class="hero-actions">
-          <a class="button primary" :href="downloadUrl" download>Windows setup</a>
-          <a class="button ghost" href="#features">Features</a>
+          <a class="button primary" :href="downloadUrl" download>下载 Windows 版</a>
+          <a class="button ghost" href="#workflow">查看流程</a>
         </div>
         <div class="stat-strip" aria-label="Product highlights">
           <div v-for="item in statItems" :key="item[1]">
@@ -127,14 +127,30 @@ function iconPath(name: string) {
       </div>
 
       <figure class="hero-media">
-        <img class="hero-shot" :src="heroImageUrl" alt="YDLite Windows app with a URL input, manual tool checks, and parse button" />
+        <img class="hero-shot" :src="heroImageUrl" alt="YDLite Windows 应用界面" />
       </figure>
+    </section>
+
+    <section id="workflow" class="workflow-section">
+      <div class="workflow-heading">
+        <p class="eyebrow">一条简单链路</p>
+        <h2>从视频到中文字幕，只需三步。</h2>
+      </div>
+      <ol class="workflow-list">
+        <li v-for="item in workflowItems" :key="item[0]">
+          <span>{{ item[0] }}</span>
+          <div>
+            <strong>{{ item[1] }}</strong>
+            <p>{{ item[2] }}</p>
+          </div>
+        </li>
+      </ol>
     </section>
 
     <section id="features" class="section-shell">
       <div class="section-heading">
-        <p class="eyebrow">Clear by default</p>
-        <h2>Everything important is visible.</h2>
+        <p class="eyebrow">需要的功能，清楚可见</p>
+        <h2>本地、免费或云端，由你选择。</h2>
       </div>
 
       <div class="bento-grid">
@@ -153,12 +169,12 @@ function iconPath(name: string) {
 
     <section id="download" class="download-section">
       <div class="download-copy">
-        <p class="eyebrow">Windows build</p>
-        <h2>Small installer. Local workflow.</h2>
+        <p class="eyebrow">Windows x64</p>
+        <h2>安装很小，能力按需下载。</h2>
       </div>
       <div class="download-card">
-        <a class="button download-option" :href="downloadUrl" download>.exe</a>
-        <a class="button download-option" :href="msiUrl" download>.msi</a>
+        <a class="button download-option" :href="downloadUrl" download>EXE 安装包</a>
+        <a class="button download-option" :href="msiUrl" download>MSI 安装包</a>
       </div>
     </section>
 
@@ -240,6 +256,7 @@ svg {
 
 .landing-nav,
 .hero-section,
+.workflow-section,
 .section-shell,
 .download-section,
 .site-footer {
@@ -370,6 +387,67 @@ svg {
   gap: clamp(34px, 6vw, 76px);
   align-items: center;
   padding: clamp(46px, 7vw, 86px) 0 54px;
+}
+
+.workflow-section,
+.section-shell,
+.download-section {
+  scroll-margin-top: 24px;
+}
+
+.workflow-section {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(40px, 8vw, 112px);
+  padding: 70px 0 68px;
+  border-top: 1px solid var(--line);
+}
+
+.workflow-heading h2 {
+  max-width: 9ch;
+  margin: 16px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(40px, 5vw, 64px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.workflow-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-list li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 18px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.workflow-list li:first-child {
+  padding-top: 0;
+}
+
+.workflow-list li > span {
+  color: var(--blue);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.workflow-list strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.45rem;
+}
+
+.workflow-list p {
+  max-width: 42ch;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
 }
 
 .hero-copy {
@@ -543,11 +621,11 @@ svg {
   box-shadow: 0 4px 16px rgba(52, 54, 58, 0.02);
 }
 
-.card-parse {
+.card-route {
   grid-column: span 5;
 }
 
-.card-mp4 {
+.card-download {
   grid-column: span 4;
 }
 
@@ -555,11 +633,10 @@ svg {
   grid-column: span 3;
 }
 
-.card-speed,
-.card-cookies,
-.card-queue,
-.card-logs {
-  grid-column: span 3;
+.card-cloud,
+.card-output,
+.card-recovery {
+  grid-column: span 4;
 }
 
 .card-icon {
@@ -572,15 +649,15 @@ svg {
   color: var(--blue);
 }
 
-.card-mp4 .card-icon {
+.card-download .card-icon {
   color: var(--green);
 }
 
-.card-cookies .card-icon {
+.card-cloud .card-icon {
   color: var(--rose);
 }
 
-.card-logs .card-icon {
+.card-output .card-icon {
   color: var(--yellow);
 }
 
@@ -669,6 +746,7 @@ svg {
 
 @media (max-width: 980px) {
   .hero-section,
+  .workflow-section,
   .section-heading,
   .download-section {
     grid-template-columns: 1fr;
@@ -692,13 +770,12 @@ svg {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
-  .card-parse,
-  .card-mp4,
+  .card-route,
+  .card-download,
   .card-local,
-  .card-speed,
-  .card-cookies,
-  .card-queue,
-  .card-logs {
+  .card-cloud,
+  .card-output,
+  .card-recovery {
     grid-column: span 3;
   }
 }
@@ -706,6 +783,7 @@ svg {
 @media (max-width: 680px) {
   .landing-nav,
   .hero-section,
+  .workflow-section,
   .section-shell,
   .download-section,
   .site-footer {
@@ -749,13 +827,12 @@ svg {
     grid-template-columns: 1fr;
   }
 
-  .card-parse,
-  .card-mp4,
+  .card-route,
+  .card-download,
   .card-local,
-  .card-speed,
-  .card-cookies,
-  .card-queue,
-  .card-logs {
+  .card-cloud,
+  .card-output,
+  .card-recovery {
     grid-column: auto;
   }
 

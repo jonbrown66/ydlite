@@ -13,16 +13,20 @@
     "windows": [
       {
         "title": "YDLite",
-        "width": 980,
-        "height": 680,
-        "minWidth": 760,
+        "width": 1180,
+        "height": 780,
+        "minWidth": 720,
         "minHeight": 560,
         "decorations": false,
-        "backgroundColor": "#f4efe7"
+        "backgroundColor": "#edf1f6"
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "bundle": {

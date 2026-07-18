@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --mode tauri",
+    "dev:web": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "build:app": "vue-tsc --noEmit && vite build --mode tauri",
     "preview": "vite preview",
@@ -14,13 +15,20 @@
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
     "@tauri-apps/plugin-dialog": "^2.4.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "gsap": "^3.15.0",
     "iconoir": "^7.11.0",
-    "vue": "^3.5.13"
+    "pinia": "^3.0.4",
+    "tailwind-merge": "^3.6.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.4",
+    "@tailwindcss/vite": "^4.3.1",
     "@vitejs/plugin-vue": "^5.2.1",
+    "tailwindcss": "^4.3.1",
     "typescript": "^5.6.3",
     "vite": "^6.0.7",
     "vue-tsc": "^2.2.0"

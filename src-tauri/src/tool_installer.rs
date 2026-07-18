@@ -5,9 +5,9 @@ use std::path::Path;
 use futures_util::StreamExt;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
-use tokio::process::Command;
 
 use crate::errors::AppError;
+use crate::process_utils::hidden_command;
 use crate::tool_paths;
 
 const YTDLP_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
@@ -38,7 +38,9 @@ pub async fn install_missing_tools(app: AppHandle) -> Result<(), AppError> {
         emit(&app, "yt-dlp", "installed", Some(100.0), "yt-dlp 已安装");
     }
 
-    if !command_available(tool_paths::ffmpeg(), "-version").await {
+    if !command_available(tool_paths::ffmpeg(), "-version").await
+        || !command_available(tool_paths::ffprobe(), "-version").await
+    {
         let archive = tool_paths::tools_dir().join("ffmpeg.zip");
         download_file(&app, "ffmpeg", FFMPEG_URL, &archive).await?;
         emit(&app, "ffmpeg", "extracting", None, "正在解压 ffmpeg");
@@ -61,7 +63,7 @@ pub async fn update_ytdlp(app: AppHandle) -> Result<(), AppError> {
 }
 
 async fn command_available(program: std::path::PathBuf, version_arg: &str) -> bool {
-    Command::new(program)
+    hidden_command(program)
         .arg(version_arg)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -123,25 +125,39 @@ fn extract_ffmpeg(archive: &Path, destination: &Path) -> Result<(), AppError> {
     let mut zip = zip::ZipArchive::new(cursor)
         .map_err(|error| AppError::user("ffmpeg 解压失败。", error.to_string()))?;
 
+    let mut found_ffmpeg = false;
+    let mut found_ffprobe = false;
     for index in 0..zip.len() {
         let mut file = zip
             .by_index(index)
             .map_err(|error| AppError::user("ffmpeg 解压失败。", error.to_string()))?;
         let name = file.name().replace('\\', "/");
-        if name.ends_with("/bin/ffmpeg.exe") || name == "ffmpeg.exe" {
+        let target = if name.ends_with("/bin/ffmpeg.exe") || name == "ffmpeg.exe" {
+            found_ffmpeg = true;
+            Some(destination.to_path_buf())
+        } else if name.ends_with("/bin/ffprobe.exe") || name == "ffprobe.exe" {
+            found_ffprobe = true;
+            Some(destination.with_file_name("ffprobe.exe"))
+        } else {
+            None
+        };
+        if let Some(target) = target {
             if let Some(parent) = destination.parent() {
                 fs::create_dir_all(parent)?;
             }
-            let mut out = File::create(destination)?;
+            let mut out = File::create(target)?;
             std::io::copy(&mut file, &mut out)?;
-            return Ok(());
         }
     }
 
-    Err(AppError::user(
-        "ffmpeg 解压失败，压缩包中未找到 ffmpeg.exe。",
-        format!("Archive: {}", archive.display()),
-    ))
+    if found_ffmpeg && found_ffprobe {
+        Ok(())
+    } else {
+        Err(AppError::user(
+            "ffmpeg 工具解压失败，压缩包中缺少 ffmpeg.exe 或 ffprobe.exe。",
+            format!("Archive: {}", archive.display()),
+        ))
+    }
 }
 
 fn emit(

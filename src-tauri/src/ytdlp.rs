@@ -2,6 +2,7 @@ use crate::commands::DownloadMode;
 
 pub const OUTPUT_TEMPLATE: &str = "%(title).200B.%(ext)s";
 const GENERIC_IMPERSONATE_ARGS: [&str; 2] = ["--extractor-args", "generic:impersonate"];
+const CONCURRENT_FRAGMENTS: &str = "8";
 const BEST_COMPATIBLE_FORMAT: &str =
     "bv*[ext=mp4]+ba[ext=m4a]/bv*[vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b";
 const P720_COMPATIBLE_FORMAT: &str = "bv*[ext=mp4][height<=720]+ba[ext=m4a]/bv*[vcodec^=avc1][height<=720]+ba[ext=m4a]/b[ext=mp4][height<=720]/bv*[height<=720]+ba/b[height<=720]/best";
@@ -55,12 +56,24 @@ pub fn parse_args(url: &str, flat_playlist: bool, options: &YtdlpOptions) -> Vec
     args
 }
 
+#[cfg(test)]
 pub fn download_args(
     mode: &DownloadMode,
     custom_format: Option<&str>,
     dir: &str,
     url: &str,
     options: &YtdlpOptions,
+) -> Vec<String> {
+    download_args_with_accelerator(mode, custom_format, dir, url, options, false)
+}
+
+pub fn download_args_with_accelerator(
+    mode: &DownloadMode,
+    custom_format: Option<&str>,
+    dir: &str,
+    url: &str,
+    options: &YtdlpOptions,
+    use_aria2: bool,
 ) -> Vec<String> {
     let mut args = Vec::new();
     args.extend(mode_args(mode, custom_format));
@@ -69,7 +82,7 @@ pub fn download_args(
             "--no-playlist",
             "--newline",
             "-N",
-            "4",
+            CONCURRENT_FRAGMENTS,
             "--no-warnings",
             "--windows-filenames",
             "--restrict-filenames",
@@ -84,6 +97,20 @@ pub fn download_args(
         .map(str::to_string),
     );
     args.extend(GENERIC_IMPERSONATE_ARGS.into_iter().map(str::to_string));
+    if use_aria2 {
+        args.extend(
+            [
+                "--downloader",
+                "aria2c",
+                "--downloader",
+                "dash,m3u8:native",
+                "--downloader-args",
+                "aria2c:-x 8 -s 8 -k 1M --file-allocation=none",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
+    }
     args.extend(option_args(options));
     args.push(url.to_string());
     args
@@ -181,7 +208,9 @@ mod tests {
             .windows(2)
             .any(|pair| pair == ["-f", BEST_COMPATIBLE_FORMAT]));
         assert!(args.iter().any(|arg| arg == "--newline"));
-        assert!(args.windows(2).any(|pair| pair == ["-N", "4"]));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["-N", CONCURRENT_FRAGMENTS]));
         assert!(args.iter().any(|arg| arg == "--no-warnings"));
         assert!(args.iter().any(|arg| arg == "--windows-filenames"));
         assert!(args.iter().any(|arg| arg == "--restrict-filenames"));
@@ -193,6 +222,27 @@ mod tests {
             args.last().map(String::as_str),
             Some("https://example.com/video")
         );
+    }
+
+    #[test]
+    fn aria2_acceleration_is_opt_in() {
+        let args = download_args_with_accelerator(
+            &DownloadMode::Best,
+            None,
+            r"E:\Download",
+            "https://example.com/video",
+            &YtdlpOptions::default(),
+            true,
+        );
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--downloader", "aria2c"]));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--downloader", "dash,m3u8:native"]));
+        assert!(args
+            .iter()
+            .any(|arg| arg.contains("--file-allocation=none")));
     }
 
     #[test]
@@ -228,11 +278,8 @@ mod tests {
             &YtdlpOptions::default(),
         );
 
-        assert!(args.windows(2).any(|pair| {
-            pair == [
-                "-f",
-                "137+ba[ext=m4a]/137+bestaudio/best/137",
-            ]
-        }));
+        assert!(args
+            .windows(2)
+            .any(|pair| { pair == ["-f", "137+ba[ext=m4a]/137+bestaudio/best/137",] }));
     }
 }

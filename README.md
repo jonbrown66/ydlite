@@ -1,196 +1,209 @@
 # YDLite
 
-**YDLite is a fast Windows video downloader desktop app powered by `yt-dlp` and `ffmpeg`.**
+YDLite 是一款面向 Windows 的本地视频下载与字幕处理工具。粘贴视频链接即可下载，也可以导入本地视频，自动检查已有字幕、识别语音、翻译成中文，并按需生成带字幕的视频。
 
-Paste a video URL, preview metadata first, choose a format or playlist items, and download locally with clear progress. YDLite is built for people who want a simple YouTube downloader style workflow without a cloud queue, account login, or heavy browser extension.
+[下载 Windows 安装包](https://ydlite.pages.dev) · [提交问题](https://github.com/jonbrown66/ydlite/issues)
 
-[Download YDLite](https://ydlite.pages.dev) · [Report an issue](https://github.com/jonbrown66/ydlite/issues)
+## 能做什么
 
-## Why YDLite
+### 视频下载
 
-Many video downloader tools are either command-line only, browser-based, or unclear about what is happening during a download. YDLite wraps the reliability of [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) in a lightweight Windows desktop interface.
+- 使用 `yt-dlp` 解析和下载视频。
+- 下载前查看标题、封面、时长、格式和播放列表。
+- 默认优先选择 MP4 视频与 M4A/AAC 音频，提高 Windows 播放兼容性。
+- 显示下载百分比、速度、剩余时间、输出位置和详细日志。
+- 支持播放列表选择、`cookies.txt` 和下载记录。
+- 默认启用 8 路媒体分片；检测到 aria2 时为普通 HTTP 下载启用多连接加速。
 
-YDLite focuses on:
+### 转录翻译
 
-- Fast startup with no automatic `yt-dlp` or `ffmpeg` scan on launch.
-- Local-first downloads: links, cookies, history, and files stay on your machine.
-- Preview before download: title, thumbnail, duration, source, playlist entries, and available formats.
-- Windows-friendly MP4 output with M4A/AAC audio defaults to avoid common Opus playback issues.
-- Visible progress with percent, speed, ETA, total size, output path, and logs.
-- Optional `cookies.txt` support for private, login-gated, or region-limited videos.
+导入视频后，YDLite 会先检查字幕轨道：
 
-## Features
+1. 已有中文字幕：直接提取，不重复识别。
+2. 已有其他语言文本字幕：保留原时间轴，只翻译文本。
+3. 没有文本字幕：从音轨识别语言并生成字幕。
 
-| Feature | What it does |
-| --- | --- |
-| Link parsing | Reads video metadata before downloading, including playlist information when available. |
-| MP4 defaults | Prefers `mp4` video plus `m4a/AAC` audio for better Windows player compatibility. |
-| Format selection | Choose available video formats or audio-only output when supported by the source. |
-| Playlist control | Select playlist entries and process them through a simple serial queue. |
-| Manual tool check | Check `yt-dlp` and `ffmpeg` only when needed, keeping startup immediate. |
-| Guided setup | Install or update local tools from inside the app. |
-| Cookie support | Use `cookies.txt` when a video requires authentication or stricter access. |
-| Download history | Keep recent completed files with quick access to the output folder. |
+目前提供三种处理方式：
 
-## Download
+| 方式 | 语音识别 | 中文翻译 | 适合场景 |
+| --- | --- | --- | --- |
+| 本地免费 | Whisper 本地运行 | 必应翻译兼容通道 | 不想配置 API Key |
+| 本地识别 + 自定义 AI | Whisper 本地运行 | OpenAI 兼容接口 | 已有自己的 AI 接口 |
+| Gemini 云端 | Gemini | Gemini | 更少本地模型占用 |
 
-Get the latest Windows build from the landing page:
+本地 Whisper 支持自动语言识别，包括中文、英语、日语、韩语和多语言内容。模型与运行组件都不会强制下载：
 
-https://ydlite.pages.dev
+- Whisper Small Q5：约 181 MB。
+- Whisper Large V3 Turbo Q5：约 548 MB。
+- CPU 运行组件：约 7.6 MB。
+- NVIDIA CUDA 运行组件：约 647 MB。
 
-Available installer files:
+### 字幕与视频输出
+
+- 自动生成中文字幕 SRT。
+- 可选择生成带字幕的 H.264 MP4。
+- 自动检测 NVIDIA NVENC、Intel QSV、AMD AMF；硬件编码失败时回退 CPU。
+- 使用临时文件生成，只有 ffprobe 验证可读取且时长正确后才显示完成。
+- 不覆盖原视频。
+
+### 任务与存储
+
+- 下载完成后可直接进入“转录翻译”。
+- 任务记录可播放输出视频、打开字幕、打开文件夹、删除单条或清空记录。
+- 保存字幕阶段耗时、重试次数、上传量和视频编码方式。
+- 应用异常关闭后，未完成任务会变为“可继续”，Gemini 分块任务从已完成部分续跑。
+- 设置页可查看和清理临时音频、WebView 缓存及清理记录。
+- 清理缓存不会删除模型、字幕项目或输出视频。
+
+## 快速开始
+
+### 下载视频
+
+1. 粘贴视频链接。
+2. 点击“解析链接”。
+3. 选择格式和保存目录。
+4. 点击“开始下载”。
+5. 下载完成后打开文件，或直接创建字幕。
+
+### 生成中文字幕
+
+1. 打开“转录翻译”。
+2. 选择本地视频，或从下载结果进入。
+3. YDLite 自动检查字幕、音轨和语言。
+4. 确认是否生成字幕视频。
+5. 点击生成，完成后播放视频或打开字幕文件。
+
+首次使用本地模式，需要在“设置”中主动下载一个 Whisper 模型和运行组件。使用 Gemini 或自定义 AI 时，需要先保存相应 API Key。
+
+## 隐私与密钥
+
+- 下载、Whisper 识别、字幕项目和视频烧录都在本机执行。
+- Gemini 模式只上传提取后的压缩音频，不上传视频画面。
+- Gemini 文件在请求完成、失败或取消后删除。
+- Gemini Key 和自定义 AI Key 保存在 Windows 凭据管理器，不写入项目 JSON、前端存储或日志。
+- 使用必应翻译兼容通道时，字幕文本会发送到微软翻译服务。该方式无需用户 API Key，但不是承诺长期稳定的正式开发者 API。
+
+## 安装与依赖
+
+用户环境：
+
+- Windows 10 或 Windows 11（x64）。
+- WebView2 Runtime（Windows 11 通常已包含）。
+- `yt-dlp` 与 `ffmpeg`。
+
+YDLite 可在应用内安装缺失工具，默认位置：
+
+```text
+<ydlite.exe 所在目录>\tools\
+```
+
+工具查找顺序：
+
+1. `YDLITE_YTDLP`、`YDLITE_FFMPEG`、`YDLITE_FFPROBE` 环境变量。
+2. `<ydlite.exe 所在目录>/tools/`。
+3. 系统 `PATH`。
+
+Windows 安装包：
 
 - `YDLite_0.1.0_x64-setup.exe`
 - `YDLite_0.1.0_x64_en-US.msi`
 
-## How It Works
+## 下载策略
 
-1. Paste a video URL.
-2. Click **Parse** to preview metadata and formats.
-3. Choose a save folder and output mode.
-4. Download with live progress.
-5. Open the finished file or output folder from history.
-
-YDLite delegates extraction and downloading to `yt-dlp`, then uses `ffmpeg` when merging or converting media is required.
-
-## Download Strategy
-
-The default video format selection is designed for Windows playback compatibility:
+默认视频格式：
 
 ```text
 bv*[ext=mp4]+ba[ext=m4a]/bv*[vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b
 ```
 
-This prioritizes MP4 video with M4A/AAC audio. If a site does not provide those formats, YDLite falls back to the best available `yt-dlp` output.
-
-Downloads also use:
+核心参数：
 
 ```text
---merge-output-format mp4 --no-playlist --newline -N 4 --windows-filenames --restrict-filenames
+--merge-output-format mp4 --no-playlist --newline -N 8 --windows-filenames --restrict-filenames
 ```
 
-## Requirements
+aria2 仅在系统中已安装时使用，并只接管普通 HTTP 下载；DASH/HLS 继续使用 yt-dlp 原生下载器，以保留稳定的分片处理和进度。
 
-For users:
+## 开发
 
-- Windows 10 or Windows 11
-- `yt-dlp`
-- `ffmpeg`
-
-YDLite can install tools into:
-
-```text
-<ydlite.exe directory>\tools\
-```
-
-Tool lookup order:
-
-1. `YDLITE_YTDLP` and `YDLITE_FFMPEG` environment variables
-2. `<ydlite.exe directory>/tools/yt-dlp.exe`
-3. `<ydlite.exe directory>/tools/ffmpeg/ffmpeg.exe`
-4. System `PATH`
-
-For developers:
+需要：
 
 - Node.js 20+
 - Rust stable
-- Tauri 2 Windows prerequisites
+- Tauri 2 的 Windows 构建环境
 
-## Tech Stack
-
-- Tauri 2
-- Vue 3
-- TypeScript
-- Rust
-- Vite
-- GSAP for landing page motion
-- Cloudflare Pages for the landing page
-
-## Development
-
-Install dependencies:
+安装依赖：
 
 ```powershell
 npm install
 ```
 
-Run the Tauri app:
+启动桌面应用：
 
 ```powershell
 npm run tauri dev
 ```
 
-Build the landing page:
+启动 Landing Page：
 
 ```powershell
-npm run build
+npm run dev:web
 ```
 
-Build the Tauri frontend:
+运行检查：
 
 ```powershell
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo check --manifest-path src-tauri/Cargo.toml
 npm run build:app
 ```
 
-Build Windows installers:
+生成 Windows 安装包：
 
 ```powershell
 npm run tauri build
 ```
 
-Tauri bundles are generated under:
+产物位于：
 
 ```text
-src-tauri/target/release/bundle
+src-tauri/target/release/bundle/
 ```
 
-## Project Structure
+## 项目结构
 
 ```text
-src/                  Vue desktop app and landing page
-src-tauri/src/        Rust commands, downloader, progress parser, tool setup
-src-tauri/icons/      App icon
-public/downloads/     Windows installer files served by the landing page
-public/landing/       Landing page product screenshots
+src/                         Vue 桌面界面与 Landing Page
+src/pages/                   下载、任务、设置页面
+src/SubtitleWorkspace.vue    自动字幕主流程
+src-tauri/src/               Rust 命令与业务逻辑
+public/downloads/            Landing Page 提供的安装包
+public/landing/              产品截图
 ```
 
-## FAQ
+## 技术栈
 
-### Is YDLite a YouTube downloader?
+- Tauri 2
+- Vue 3、TypeScript、Pinia、Vue Router
+- Rust、Tokio、Reqwest
+- yt-dlp、FFmpeg / ffprobe
+- whisper.cpp
+- Gemini Interactions API
+- Vite、Cloudflare Pages
 
-YDLite supports links that `yt-dlp` supports, including many video platforms. Platform availability depends on `yt-dlp`, the source site, and whether the video requires login cookies.
+## 当前范围与限制
 
-### Does YDLite upload videos or URLs to a server?
+- 当前为 Windows x64 桌面版。
+- 不提供实时麦克风转录、说话人识别或专业逐字级时间轴对齐。
+- 图片字幕不会 OCR，会改为从音频重新识别。
+- Gemini 生成式时间戳可能需要人工抽查；对于同步要求严格的正式发布视频，请先检查字幕。
+- 平台下载能力取决于 `yt-dlp`、目标网站和账号权限。
+- 必应翻译兼容通道可能随微软服务变化而失效，可切换到 Gemini 或自定义 AI。
 
-No. YDLite is a local Windows desktop app. Downloads run on your machine through `yt-dlp` and `ffmpeg`.
+## 第三方组件
 
-### Why does YDLite prefer MP4 and AAC?
-
-Some Windows players do not handle Opus audio inside downloaded files well. YDLite prefers MP4 video with M4A/AAC audio when available for better out-of-the-box playback.
-
-### Why are tool checks manual?
-
-Startup should feel instant. YDLite does not scan for `yt-dlp` and `ffmpeg` automatically on launch; use the **Check** button when you need to verify or install tools.
-
-### Can YDLite download private videos?
-
-If `yt-dlp` can access the video with cookies, YDLite can use a `cookies.txt` file. Access depends on the source platform and your account permissions.
-
-## Search and AI Summary
-
-YDLite is a Windows video downloader and `yt-dlp` GUI built with Tauri, Vue, TypeScript, and Rust. It is useful for local video downloads, MP4 downloads, playlist downloads, `ffmpeg`-based merging, `cookies.txt` access, and users who want a lightweight desktop alternative to command-line `yt-dlp`.
-
-## Deployment
-
-The landing page is deployed to Cloudflare Pages:
-
-```powershell
-npm run build
-npx wrangler pages deploy dist --project-name ydlite --branch main --commit-dirty=true
-```
-
-Before deploying a public build, copy fresh Tauri bundles into `public/downloads`.
+第三方组件及许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## License
 
-YDLite is licensed under the [MIT License](LICENSE).
+YDLite 使用 [MIT License](LICENSE)。

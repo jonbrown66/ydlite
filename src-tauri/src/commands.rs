@@ -5,11 +5,11 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
-use tokio::process::Command;
 use url::Url;
 
 use crate::downloader::{run_download, DownloadState};
 use crate::errors::AppError;
+use crate::process_utils::hidden_command;
 use crate::tool_paths;
 use crate::ytdlp;
 
@@ -186,6 +186,9 @@ pub async fn check_dependencies() -> Result<DependencyStatus, AppError> {
     let ffmpeg_path = tool_paths::ffmpeg();
     let ytdlp_version = command_version(ytdlp_path.clone(), "--version").await;
     let ffmpeg_version = command_version(ffmpeg_path.clone(), "-version").await;
+    let ffprobe_ok = command_version(tool_paths::ffprobe(), "-version")
+        .await
+        .is_some();
 
     Ok(DependencyStatus {
         ytdlp_ok: ytdlp_version.is_some(),
@@ -193,7 +196,7 @@ pub async fn check_dependencies() -> Result<DependencyStatus, AppError> {
         ytdlp_latest_version: None,
         ytdlp_update_available: false,
         ytdlp_path: ytdlp_path.to_string_lossy().to_string(),
-        ffmpeg_ok: ffmpeg_version.is_some(),
+        ffmpeg_ok: ffmpeg_version.is_some() && ffprobe_ok,
         ffmpeg_version,
         ffmpeg_path: ffmpeg_path.to_string_lossy().to_string(),
     })
@@ -446,7 +449,7 @@ async fn run_parse_attempt(
     flat_playlist: bool,
 ) -> Result<serde_json::Value, ParseAttempt> {
     let ytdlp_options = options.to_ytdlp_options(site);
-    let output = Command::new(tool_paths::ytdlp())
+    let output = hidden_command(tool_paths::ytdlp())
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
         .args(ytdlp::parse_args(url, flat_playlist, &ytdlp_options))
@@ -766,7 +769,7 @@ pub async fn open_parent_folder(app: AppHandle, path: String) -> Result<(), AppE
 }
 
 async fn command_version(program: PathBuf, arg: &str) -> Option<String> {
-    let output = Command::new(program)
+    let output = hidden_command(program)
         .arg(arg)
         .stdin(Stdio::null())
         .output()

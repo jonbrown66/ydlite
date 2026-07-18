@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YDLite Promo Video</title>
+    <!-- 引入 GSAP -->
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* 全局及复位样式 */
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background-color: #000000; /* 严格纯黑背景 */
+        color: #ffffff;
+        font-family: 'Inter', sans-serif; /* 简化为 Inter，让编译器自动嵌入 */
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* 统一字体规格 */
+      .font-mono {
+        font-family: 'Consolas', monospace;
+      }
+      .neon-text {
+        color: #35f28f; /* Cyberpunk Green */
+      }
+      
+      /* 场景基座 */
+      .scene {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background-color: #000000;
+        box-sizing: border-box;
+      }
+      
+      /* 初始显隐状态（通过 opacity 和 visibility 双重把关，防止渲染闪烁） */
+      #scene1 {
+        z-index: 1;
+      }
+      #scene2 {
+        z-index: 2;
+        opacity: 0;
+        visibility: hidden;
+      }
+      #scene3 {
+        z-index: 3;
+        opacity: 0;
+        visibility: hidden;
+      }
+      #scene4 {
+        z-index: 4;
+        opacity: 0;
+        visibility: hidden;
+      }
+      #outro-scene {
+        z-index: 5;
+        opacity: 0;
+        visibility: hidden;
+      }
+
+      /* 布局系统：高对比度瑞士排版 */
+      .scene-content {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        width: 100%;
+        height: 100%;
+        padding: 100px 140px;
+      }
+
+      /* 顶部状态条 */
+      .header-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #222222;
+        padding-bottom: 30px;
+      }
+      .header-bar .brand {
+        font-size: 36px;
+        font-weight: 900;
+        letter-spacing: -1.5px;
+        text-transform: uppercase;
+      }
+      
+      /* 瑞士排版式步骤指示器 */
+      .step-indicator {
+        display: flex;
+        gap: 15px;
+        font-size: 16px;
+        font-weight: 700;
+        color: #333333;
+      }
+      .step-dot {
+        transition: color 0.3s;
+      }
+      .step-dot.active {
+        color: #35f28f;
+      }
+      .step-separator {
+        color: #222222;
+      }
+
+      /* 通用终端面板与卡片 */
+      .obsidian-panel {
+        background-color: #080808; /* Obsidian Gray */
+        border: 1px solid #222222;
+        border-radius: 12px;
+        padding: 40px;
+      }
+
+      .terminal-row {
+        display: flex;
+        align-items: center;
+        font-size: 28px;
+        line-height: 1.5;
+        color: #e0e0e0;
+      }
+      .terminal-prompt {
+        color: #35f28f;
+        margin-right: 18px;
+        font-weight: bold;
+      }
+      .terminal-cursor {
+        width: 14px;
+        height: 28px;
+        background-color: #35f28f;
+        display: none;
+        margin-left: 6px;
+      }
+
+      /* 底部状态条 */
+      .footer-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid #222222;
+        padding-top: 30px;
+        color: #444444;
+        font-size: 16px;
+      }
+
+      /* === 场景独占排版 === */
+
+      /* Scene 1: Intro */
+      .hero-center {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex-grow: 1;
+        gap: 30px;
+      }
+      .app-title-huge {
+        font-size: 140px;
+        font-weight: 900;
+        letter-spacing: -6px;
+        line-height: 1;
+        margin: 0;
+      }
+      .scene1-terminal {
+        width: 800px;
+        min-height: 120px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .startup-log {
+        font-size: 20px;
+        color: #35f28f;
+        margin-top: 20px;
+        opacity: 0;
+      }
+
+      /* Scene 2 & 3: Split Layout */
+      .split-layout {
+        display: flex;
+        flex-grow: 1;
+        align-items: center;
+        justify-content: space-between;
+        gap: 80px;
+        margin: 40px 0;
+      }
+      .left-console {
+        flex: 1.2;
+        display: flex;
+        flex-direction: column;
+        gap: 25px;
+      }
+      .right-preview {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+        opacity: 0;
+      }
+      .section-num {
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: #666666;
+      }
+      .section-title {
+        font-size: 64px;
+        font-weight: 900;
+        letter-spacing: -2px;
+        margin: 0 0 10px 0;
+        text-transform: uppercase;
+      }
+      .meta-title {
+        font-size: 26px;
+        font-weight: 700;
+        margin-bottom: 20px;
+      }
+      .meta-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+      }
+      .meta-item {
+        display: flex;
+        justify-content: space-between;
+        font-size: 18px;
+        border-bottom: 1px dashed #222222;
+        padding-bottom: 10px;
+      }
+      .meta-label {
+        color: #666666;
+      }
+      .format-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 15px;
+      }
+      .format-badge {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background-color: #0d0d0d;
+        border: 1px solid #1a1a1a;
+        padding: 12px 20px;
+        border-radius: 6px;
+        font-size: 16px;
+      }
+
+      /* Scene 3: Multi-Channel */
+      .channels-showcase {
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+        justify-content: space-between;
+        height: 100%;
+        margin: 40px 0;
+      }
+      .channel-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 24px;
+        width: 100%;
+      }
+      .channel-card {
+        background-color: #080808;
+        border: 1px solid #222222;
+        border-radius: 12px;
+        padding: 35px 20px;
+        text-align: center;
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        color: #888888;
+        /* 彻底移除 transition 属性，避免同 GSAP 补间边框动画冲突导致的高亮失效 */
+      }
+      .channel-sub-info {
+        font-size: 20px;
+        color: #666666;
+        line-height: 1.6;
+      }
+
+      /* Scene 4: Download */
+      .dl-layout {
+        display: flex;
+        flex-grow: 1;
+        flex-direction: column;
+        justify-content: center;
+        gap: 40px;
+      }
+      .dl-panel {
+        width: 100%;
+        min-height: 280px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 50px 40px;
+      }
+      .dl-progress-container {
+        margin-top: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+      }
+      .dl-status-metrics {
+        display: flex;
+        justify-content: space-between;
+        font-size: 20px;
+        color: #888888;
+      }
+      .progress-bar-track {
+        width: 100%;
+        height: 14px;
+        background-color: #111111;
+        border-radius: 7px;
+        overflow: hidden;
+      }
+      .progress-bar-fill {
+        width: 0%;
+        height: 100%;
+        background-color: #35f28f;
+      }
+      
+      /* Scene 5: Outro */
+      .outro-center {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex-grow: 1;
+        gap: 40px;
+      }
+      .outro-title {
+        font-size: 120px;
+        font-weight: 900;
+        letter-spacing: -5px;
+        margin: 0;
+      }
+      .outro-link {
+        font-size: 36px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+      }
+      .outro-desc {
+        font-size: 22px;
+        color: #666666;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 根节点，指定 data-duration 为 24 秒 -->
+    <div
+      id="root"
+      data-composition-id="main"
+      data-width="1920"
+      data-height="1080"
+      data-start="0"
+      data-duration="24"
+    >
+      
+      <!-- ================= SCENE 1: INTRODUCTION ================= -->
+      <!-- 显式声明允许在转场滑动时发生遮挡与重叠 -->
+      <div id="scene1" class="scene" data-layout-allow-occlusion="true" data-layout-allow-overlap="true">
+        <div class="scene-content">
+          <div class="header-bar">
+            <span class="brand font-mono">ydlite</span>
+            <div class="step-indicator font-mono">
+              <span class="step-dot active">INIT</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot">PARSE</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot">CHANNELS</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot">DOWNLOAD</span>
+            </div>
+          </div>
+          
+          <div class="hero-center">
+            <h1 class="app-title-huge">YDLITE</h1>
+            <div class="obsidian-panel scene1-terminal">
+              <div class="terminal-row font-mono">
+                <span class="terminal-prompt">❯</span>
+                <span id="s1-cmd"></span>
+                <span class="terminal-cursor" id="s1-cursor"></span>
+              </div>
+              <div class="startup-log font-mono" id="s1-log">
+                [SUCCESS] YDLite desktop client v0.1.0 initialized.
+              </div>
+            </div>
+          </div>
+          
+          <div class="footer-bar font-mono">
+            <span>WINDOWS VIDEO DOWNLOADER</span>
+            <span>POWERED BY YT-DLP & FFMPEG</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= SCENE 2: LINK PARSING ================= -->
+      <div id="scene2" class="scene" data-layout-allow-occlusion="true" data-layout-allow-overlap="true">
+        <div class="scene-content">
+          <div class="header-bar">
+            <span class="brand font-mono">ydlite</span>
+            <div class="step-indicator font-mono">
+              <span class="step-dot">INIT</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot active">PARSE</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot">CHANNELS</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot">DOWNLOAD</span>
+            </div>
+          </div>
+          
+          <div class="split-layout">
+            <!-- 左侧控制台 -->
+            <div class="left-console">
+              <span class="section-num font-mono">STEP 01</span>
+              <h2 class="section-title">Parse Video Link</h2>
+              <div class="obsidian-panel" style="min-height: 180px; display: flex; flex-direction: column; justify-content: center;">
+                <div class="terminal-row font-mono">
+                  <span class="terminal-prompt">❯</span>
+                  <span id="s2-cmd"></span>
+                  <span class="terminal-cursor" id="s2-cursor"></span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 右侧预览面板 -->
+            <div class="right-preview" id="s2-preview">
+              <div class="obsidian-panel">
+                <div class="meta-title font-mono">Metadata Preview</div>
+                <div class="meta-grid">
+                  <div class="meta-item">
+                    <span class="meta-label">Title</span>
+                    <span id="s2-meta-title">Agentic Coding Demonstration</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Duration</span>
+                    <span class="font-mono">14:32</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Source</span>
+                    <span class="neon-text font-mono">YouTube</span>
+                  </div>
+                </div>
+                
+                <div class="format-list">
+                  <div class="format-badge s2-format-item">
+                    <span class="font-mono">1080p MP4</span>
+                    <span class="neon-text">Best Video</span>
+                  </div>
+                  <div class="format-badge s2-format-item">
+                    <span class="font-mono">720p MP4</span>
+                    <span style="color:#888;">Fast Video</span>
+                  </div>
+                  <div class="format-badge s2-format-item">
+                    <span class="font-mono">M4A AAC</span>
+                    <span style="color:#888;">Audio Only</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="footer-bar font-mono">
+            <span>PREVIEW BEFORE DOWNLOAD</span>
+            <span>LOCAL-FIRST DATA RETENTION</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= SCENE 3: MULTI-CHANNEL ================= -->
+      <div id="scene3" class="scene" data-layout-allow-occlusion="true" data-layout-allow-overlap="true">
+        <div class="scene-content">
+          <div class="header-bar">
+            <span class="brand font-mono">ydlite</span>
+            <div class="step-indicator font-mono">
+              <span class="step-dot">INIT</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot">PARSE</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot active">CHANNELS</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot">DOWNLOAD</span>
+            </div>
+          </div>
+          
+          <div class="channels-showcase">
+            <div style="text-align: left;">
+              <span class="section-num font-mono">STEP 02</span>
+              <h2 class="section-title" style="margin-top: 10px;">Universal Channel Support</h2>
+            </div>
+            
+            <!-- 左右分栏：左边网格，右边1000+动态数字翻滚 -->
+            <div class="split-layout" style="margin: 20px 0;">
+              <div class="left-console" style="flex: 1.2;">
+                <div class="channel-grid">
+                  <div class="channel-card font-mono" id="card-yt">YouTube</div>
+                  <div class="channel-card font-mono" id="card-bili">Bilibili</div>
+                  <div class="channel-card font-mono" id="card-x">X (Twitter)</div> <!-- 替换成有名的渠道 X -->
+                  <div class="channel-card font-mono" id="card-tiktok">TikTok</div>
+                </div>
+              </div>
+              
+              <div class="right-preview" id="s3-counter-panel" style="flex: 1; opacity: 0; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                <div class="obsidian-panel" style="width: 100%; text-align: center; padding: 45px 30px; display: flex; flex-direction: column; gap: 15px; align-items: center; justify-content: center;">
+                  <span class="section-num font-mono">SUPPORTED SITES</span>
+                  <div id="s3-digit-count" class="font-mono neon-text" style="font-size: 88px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -2px;">0+</div>
+                  <span style="font-size: 14px; color: #666666; text-transform: uppercase; letter-spacing: 1px;">Universal Extraction</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="channel-sub-info font-mono" id="s3-info">
+              Underpinned by <span class="neon-text">yt-dlp</span>. Supports login-gated videos through simple <span class="neon-text">cookies.txt</span> import.
+            </div>
+          </div>
+          
+          <div class="footer-bar font-mono">
+            <span>UNLIMITED CHANNELS</span>
+            <span>BYPASS REGION LIMITS</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= SCENE 4: DOWNLOAD ================= -->
+      <div id="scene4" class="scene" data-layout-allow-occlusion="true" data-layout-allow-overlap="true">
+        <div class="scene-content">
+          <div class="header-bar">
+            <span class="brand font-mono">ydlite</span>
+            <div class="step-indicator font-mono">
+              <span class="step-dot">INIT</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot">PARSE</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot">CHANNELS</span>
+              <span class="step-separator">/</span>
+              <span class="step-dot active">DOWNLOAD</span>
+            </div>
+          </div>
+          
+          <div class="dl-layout">
+            <div>
+              <span class="section-num font-mono">STEP 03</span>
+              <h2 class="section-title">Fast Multi-Threaded Download</h2>
+            </div>
+            
+            <!-- 场景四精简面板：仅保留高细节主下载条与网速/ETA浮动 -->
+            <div class="obsidian-panel dl-panel">
+              <div class="terminal-row font-mono">
+                <span class="terminal-prompt">❯</span>
+                <span id="s4-cmd"></span>
+                <span class="terminal-cursor" id="s4-cursor"></span>
+              </div>
+              
+              <div class="dl-progress-container font-mono" id="s4-progress-box" style="opacity: 0;">
+                <div class="dl-status-metrics">
+                  <span id="s4-status-text">Downloading...</span>
+                  <span id="s4-progress-percent" style="font-variant-numeric: tabular-nums;">0%</span>
+                </div>
+                <div class="progress-bar-track">
+                  <div class="progress-bar-fill" id="s4-progress-fill"></div>
+                </div>
+                <div class="dl-status-metrics" style="font-size: 16px; margin-top: 5px;">
+                  <span id="s4-speed">Speed: -- MB/s</span>
+                  <span id="s4-eta">ETA: --:--</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="footer-bar font-mono">
+            <span>HIGH COMPATIBILITY MP4 DEFAULTS</span>
+            <span>MULTI-THREADED SPEEDUP</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- ================= SCENE 5: OUTRO ================= -->
+      <div id="outro-scene" class="scene" data-layout-allow-occlusion="true" data-layout-allow-overlap="true">
+        <div class="scene-content">
+          <div class="header-bar">
+            <span class="brand font-mono">ydlite</span>
+            <div class="step-indicator font-mono">
+              <span>00</span>
+              <span class="step-separator">/</span>
+              <span>01</span>
+              <span class="step-separator">/</span>
+              <span>02</span>
+              <span class="step-separator">/</span>
+              <span>03</span>
+            </div>
+          </div>
+          
+          <div class="outro-center">
+            <h2 class="outro-title">YDLITE</h2>
+            <span class="outro-desc">Fast. Local-First. Windows Video Downloader.</span>
+            <div class="outro-link font-mono neon-text" id="outro-link-element">ydlite.pages.dev</div>
+          </div>
+          
+          <div class="footer-bar font-mono">
+            <span>GITHUB: JONBROWN66/YDLITE</span>
+            <span>GET IT NOW</span>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+
+    <!-- 动画编排脚本 -->
+    <script>
+      // 注册全局时间轴
+      window.__timelines = window.__timelines || {};
+      
+      // 创建暂停的 GSAP 时间轴，由 hyperframes 引擎接管
+      var tl = gsap.timeline({ paused: true });
+      
+      // 辅助打字机效果函数（确定性）
+      function typeText(timeline, text, targetId, cursorSelector, startTime, duration) {
+        var el = document.getElementById(targetId);
+        
+        // 打字开始前显示光标，并让其在对应时段闪烁
+        timeline.set(cursorSelector, { display: "inline-block", opacity: 1 }, startTime);
+        
+        var blinkInterval = 0.15;
+        var blinkCount = Math.floor(duration / blinkInterval);
+        timeline.to(cursorSelector, { 
+          opacity: 0, 
+          duration: blinkInterval / 2, 
+          yoyo: true, 
+          repeat: blinkCount, 
+          ease: "steps(1)" 
+        }, startTime);
+        
+        // 动态打字
+        for (var i = 0; i <= text.length; i++) {
+          (function(charCount) {
+            timeline.call(function() {
+              el.textContent = text.substring(0, charCount);
+            }, null, startTime + (charCount / text.length) * duration);
+          })(i);
+        }
+        
+        // 打字结束后隐藏光标
+        timeline.set(cursorSelector, { display: "none" }, startTime + duration);
+      }
+
+      // === SCENE 1 ANIMATIONS (0.0s - 4.5s) ===
+      // 0.3s 开始，打字持续 1.2s，于 1.5s 结束
+      typeText(tl, "npx ydlite --launch", "s1-cmd", "#s1-cursor", 0.3, 1.2);
+      
+      // 成功状态卡片在 1.7s 滑入，静止展示到 4.5s (停留 2.8s)
+      tl.from("#s1-log", { y: 15, opacity: 0, duration: 0.5, ease: "power2.out" }, 1.7);
+
+      // === TRANSITION 1: Scene 1 -> Scene 2 (4.5s - 5.0s) ===
+      var T1 = 4.5;
+      tl.to("#scene1", { y: -20, opacity: 0, duration: 0.5, ease: "power3.inOut" }, T1);
+      tl.set("#scene1", { visibility: "hidden" }, T1 + 0.5); // 彻底销毁
+      
+      tl.set("#scene2", { visibility: "visible" }, T1);
+      tl.fromTo("#scene2", 
+        { y: 40, opacity: 0 }, 
+        { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 
+        T1
+      );
+
+      // === SCENE 2 ANIMATIONS (5.0s - 9.5s) ===
+      // 5.2s 开始打字，持续 1.6s，于 6.8s 结束
+      typeText(tl, 'ydlite parse "https://youtube.com/watch?v=..."', "s2-cmd", "#s2-cursor", 5.2, 1.6);
+      
+      // 右侧预览面板滑入
+      tl.fromTo("#s2-preview", 
+        { y: 25, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.65, ease: "power3.out" }, 
+        7.0
+      );
+      // Staggered format badges (7.3s，停留展示至 9.5s, 持续 2.2s)
+      tl.from(".s2-format-item", {
+        y: 15,
+        opacity: 0,
+        duration: 0.4,
+        stagger: 0.1,
+        ease: "power2.out"
+      }, 7.3);
+
+      // === TRANSITION 2: Scene 2 -> Scene 3 (9.5s - 10.0s) ===
+      var T2 = 9.5;
+      tl.to("#scene2", { y: -20, opacity: 0, duration: 0.5, ease: "power3.inOut" }, T2);
+      tl.set("#scene2", { visibility: "hidden" }, T2 + 0.5);
+      
+      tl.set("#scene3", { visibility: "visible" }, T2);
+      tl.fromTo("#scene3", 
+        { y: 40, opacity: 0 }, 
+        { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 
+        T2
+      );
+
+      // === SCENE 3 ANIMATIONS (10.0s - 14.5s) ===
+      // 渠道卡片 staggered 浮现
+      tl.from(".channel-card", {
+        scale: 0.9,
+        opacity: 0,
+        duration: 0.5,
+        stagger: 0.1,
+        ease: "back.out(1.5)"
+      }, 10.2);
+      
+      // 右侧 1000+ 渠道总览看板滑入
+      tl.fromTo("#s3-counter-panel", 
+        { y: 25, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" },
+        10.4
+      );
+
+      // 1000+ 渠道动态数字快速翻滚增加动画 (10.5s - 12.0s, 持续 1.5s)
+      var s3Proxy = { countVal: 0 };
+      var s3CountEl = document.getElementById("s3-digit-count");
+      
+      tl.to(s3Proxy, {
+        countVal: 1000,
+        duration: 1.5,
+        ease: "power3.out",
+        onUpdate: function() {
+          var v = Math.floor(s3Proxy.countVal);
+          s3CountEl.textContent = v + "+";
+        }
+      }, 10.5);
+
+      // 陆续高亮四大核心渠道（GSAP 直接更改 border 避免 CSS transition 锁冲突，2px 亮绿边框）
+      tl.to("#card-yt", { 
+        border: "2px solid #35f28f", 
+        color: "#35f28f", 
+        backgroundColor: "#0b0f0c",
+        scale: 1.05, 
+        duration: 0.35, 
+        ease: "power2.out" 
+      }, 11.0);
+      tl.to("#card-yt", { scale: 1.0, duration: 0.2, ease: "power2.inOut" }, 11.35);
+
+      tl.to("#card-bili", { 
+        border: "2px solid #35f28f", 
+        color: "#35f28f", 
+        backgroundColor: "#0b0f0c",
+        scale: 1.05, 
+        duration: 0.35, 
+        ease: "power2.out" 
+      }, 11.3);
+      tl.to("#card-bili", { scale: 1.0, duration: 0.2, ease: "power2.inOut" }, 11.65);
+
+      tl.to("#card-x", { 
+        border: "2px solid #35f28f", 
+        color: "#35f28f", 
+        backgroundColor: "#0b0f0c",
+        scale: 1.05, 
+        duration: 0.35, 
+        ease: "power2.out" 
+      }, 11.6);
+      tl.to("#card-x", { scale: 1.0, duration: 0.2, ease: "power2.inOut" }, 11.95);
+
+      tl.to("#card-tiktok", { 
+        border: "2px solid #35f28f", 
+        color: "#35f28f", 
+        backgroundColor: "#0b0f0c",
+        scale: 1.05, 
+        duration: 0.35, 
+        ease: "power2.out" 
+      }, 11.9);
+      tl.to("#card-tiktok", { scale: 1.0, duration: 0.2, ease: "power2.inOut" }, 12.25);
+      
+      // 底部详细文案渐现 (12.5s，停留展示至 14.5s, 持续 2.0s)
+      tl.from("#s3-info", { y: 15, opacity: 0, duration: 0.5, ease: "power2.out" }, 12.5);
+
+      // === TRANSITION 3: Scene 3 -> Scene 4 (14.5s - 15.0s) ===
+      var T3 = 14.5;
+      tl.to("#scene3", { y: -20, opacity: 0, duration: 0.5, ease: "power3.inOut" }, T3);
+      tl.set("#scene3", { visibility: "hidden" }, T3 + 0.5);
+      
+      tl.set("#scene4", { visibility: "visible" }, T3);
+      tl.fromTo("#scene4", 
+        { y: 40, opacity: 0 }, 
+        { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 
+        T3
+      );
+
+      // === SCENE 4 ANIMATIONS (15.0s - 19.5s) ===
+      // 15.2s 开始打字，持续 1.4s，于 16.6s 结束
+      typeText(tl, "ydlite download --threads 4", "s4-cmd", "#s4-cursor", 15.2, 1.4);
+      
+      // 显示进度条容器
+      tl.set("#s4-progress-box", { opacity: 1 }, 16.8);
+      
+      // 主进度条加载 (16.8s - 18.3s, 持续 1.5s)
+      var progressProxy = { percent: 0 };
+      var barFill = document.getElementById("s4-progress-fill");
+      var textPercent = document.getElementById("s4-progress-percent");
+      var textSpeed = document.getElementById("s4-speed");
+      var textEta = document.getElementById("s4-eta");
+      var textStatus = document.getElementById("s4-status-text");
+      
+      tl.to(progressProxy, {
+        percent: 100,
+        duration: 1.5,
+        ease: "power2.out",
+        onUpdate: function() {
+          var pct = Math.floor(progressProxy.percent);
+          barFill.style.width = pct + "%";
+          textPercent.textContent = pct + "%";
+          
+          if (pct < 10) {
+            textSpeed.textContent = "Speed: 14.2 MB/s";
+            textEta.textContent = "ETA: 00:08";
+          } else if (pct < 50) {
+            var randSpeed = (38.2 + Math.sin(pct) * 2.5).toFixed(1);
+            textSpeed.textContent = "Speed: " + randSpeed + " MB/s";
+            textEta.textContent = "ETA: 00:04";
+          } else if (pct < 100) {
+            var randSpeed = (48.5 + Math.cos(pct) * 1.8).toFixed(1);
+            textSpeed.textContent = "Speed: " + randSpeed + " MB/s";
+            textEta.textContent = "ETA: 00:01";
+          } else {
+            textStatus.textContent = "Merge complete: MP4 (H.264) + M4A (AAC)";
+            textSpeed.textContent = "Speed: -- MB/s";
+            textEta.textContent = "Finished";
+          }
+        }
+      }, 16.8);
+
+      // === TRANSITION 4: Scene 4 -> Outro Scene (19.5s - 20.0s) ===
+      var T4 = 19.5;
+      tl.to("#scene4", { y: -20, opacity: 0, duration: 0.5, ease: "power3.inOut" }, T4);
+      tl.set("#scene4", { visibility: "hidden" }, T4 + 0.5);
+      
+      tl.set("#outro-scene", { visibility: "visible" }, T4);
+      tl.fromTo("#outro-scene", 
+        { y: 40, opacity: 0 }, 
+        { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 
+        T4
+      );
+
+      // === OUTRO SCENE ANIMATIONS (20.0s - 24.0s) ===
+      // 20.1s - 20.9s 逐步滑入，静止展示到 23.5s (停留 2.6s)
+      tl.from(".outro-title", { y: 20, opacity: 0, duration: 0.4, ease: "power2.out" }, 20.1);
+      tl.from(".outro-desc", { y: 15, opacity: 0, duration: 0.4, ease: "power2.out" }, 20.4);
+      tl.from("#outro-link-element", { scale: 0.9, opacity: 0, duration: 0.3, ease: "back.out(1.7)" }, 20.7);
+
+      // 最后一幕淡出到纯黑 (23.5s - 24.0s)
+      tl.to("#outro-scene", { opacity: 0, duration: 0.5, ease: "power2.in" }, 23.5);
+      tl.set("#outro-scene", { visibility: "hidden" }, 24.0);
+
+      // 注册时间轴到全局框架
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

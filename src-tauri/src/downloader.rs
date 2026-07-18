@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::commands::DownloadRequest;
 use crate::errors::AppError;
+use crate::process_utils::hidden_command;
 use crate::progress::{parse_output_path, parse_progress_line, DownloadProgressEvent};
 use crate::tool_paths;
 use crate::ytdlp;
@@ -79,7 +79,7 @@ impl DownloadState {
         };
 
         #[cfg(target_os = "windows")]
-        let status = Command::new("taskkill")
+        let status = hidden_command("taskkill")
             .args(["/PID", &child_id.to_string(), "/T", "/F"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -88,7 +88,7 @@ impl DownloadState {
             .await;
 
         #[cfg(not(target_os = "windows"))]
-        let status = Command::new("kill")
+        let status = hidden_command("kill")
             .args(["-TERM", &child_id.to_string()])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -113,12 +113,20 @@ pub async fn run_download(
     dir: PathBuf,
 ) -> Result<(), AppError> {
     state.reserve().await?;
+    let use_aria2 = hidden_command("aria2c")
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .is_ok_and(|status| status.success());
 
-    let mut command = Command::new(tool_paths::ytdlp());
+    let mut command = hidden_command(tool_paths::ytdlp());
     command
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
-        .args(ytdlp::download_args(
+        .args(ytdlp::download_args_with_accelerator(
             &request.mode,
             request.format_id.as_deref(),
             &dir.to_string_lossy(),
@@ -126,6 +134,7 @@ pub async fn run_download(
             &request
                 .options
                 .to_ytdlp_options(ytdlp::site_profile(request.url.trim())),
+            use_aria2,
         ))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -154,7 +163,13 @@ pub async fn run_download(
     };
 
     state.set_child_id(child_id).await;
-    emit(&app, DownloadProgressEvent::status("starting", None));
+    emit(
+        &app,
+        DownloadProgressEvent::status(
+            "starting",
+            use_aria2.then_some("已启用 aria2 多连接下载。".into()),
+        ),
+    );
 
     let log_lines = Arc::new(Mutex::new(Vec::<String>::new()));
     let output_path = Arc::new(Mutex::new(None::<String>));

@@ -24,6 +24,14 @@ impl AppError {
             detail: detail.into(),
         }
     }
+
+    pub fn is_rate_limited(&self) -> bool {
+        matches!(
+            self,
+            Self::User { detail, .. }
+                if detail.contains("HTTP 429") || detail.contains("429 Too Many Requests")
+        )
+    }
 }
 
 impl Serialize for AppError {
@@ -46,5 +54,24 @@ impl Serialize for AppError {
             },
         };
         payload.serialize(serializer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_only_http_rate_limit_errors() {
+        assert!(AppError::user(
+            "Gemini 已达到当前项目的调用或费用限制。",
+            "HTTP 429 Too Many Requests"
+        )
+        .is_rate_limited());
+        assert!(!AppError::user(
+            "Gemini 拒绝了请求，请检查模型与参数。",
+            "HTTP 400 Bad Request"
+        )
+        .is_rate_limited());
     }
 }

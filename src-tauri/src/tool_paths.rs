@@ -22,6 +22,17 @@ pub fn ffmpeg() -> PathBuf {
     )
 }
 
+pub fn ffprobe() -> PathBuf {
+    first_existing(
+        "YDLITE_FFPROBE",
+        &[
+            tools_dir().join(executable_name("ffprobe")),
+            tools_dir().join("ffmpeg").join(executable_name("ffprobe")),
+        ],
+        executable_name("ffprobe"),
+    )
+}
+
 pub fn tools_dir() -> PathBuf {
     exe_dir().join("tools")
 }
@@ -63,6 +74,7 @@ fn executable_name(name: &str) -> &str {
         match name {
             "yt-dlp" => "yt-dlp.exe",
             "ffmpeg" => "ffmpeg.exe",
+            "ffprobe" => "ffprobe.exe",
             _ => name,
         }
     } else {

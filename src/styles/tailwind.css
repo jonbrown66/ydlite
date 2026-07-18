@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--app-background);
+  --color-foreground: var(--app-foreground);
+  --color-surface: var(--app-surface);
+  --color-muted: var(--app-muted);
+  --color-muted-foreground: var(--app-muted-foreground);
+  --color-border: var(--app-border);
+  --color-primary: var(--app-primary);
+  --color-primary-foreground: var(--app-primary-foreground);
+  --color-danger: var(--app-danger);
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+}
+
+:root {
+  --app-background: oklch(0.965 0.008 245);
+  --app-foreground: oklch(0.25 0.018 245);
+  --app-surface: oklch(0.988 0.004 245);
+  --app-muted: oklch(0.953 0.012 245);
+  --app-muted-foreground: oklch(0.48 0.018 245);
+  --app-border: oklch(0.86 0.014 245);
+  --app-primary: oklch(0.49 0.105 247);
+  --app-primary-foreground: oklch(0.988 0.004 245);
+  --app-danger: oklch(0.53 0.16 28);
+}
