@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::errors::AppError;
 use crate::process_utils::hidden_command;
-use crate::subtitle_types::{validate_segments, SubtitleProject, SubtitleSegment};
+use crate::subtitle_types::{validate_segments, SubtitleProject, SubtitleSegment, SubtitleStyle};
 use crate::tool_paths;
 
 fn timestamp_srt(ms: u64) -> String {
@@ -173,22 +173,138 @@ fn timestamp_ass(ms: u64) -> String {
     format!("{hours}:{minutes:02}:{seconds:02}.{centis:02}")
 }
 
-pub fn render_ass(project: &SubtitleProject, content: &str) -> Result<String, AppError> {
+fn validate_style(style: &SubtitleStyle) -> Result<(), AppError> {
+    let valid_font = !style.font_family.trim().is_empty()
+        && style.font_family.len() <= 64
+        && !style
+            .font_family
+            .chars()
+            .any(|character| matches!(character, ',' | '\n' | '\r' | '{' | '}'));
+    let valid_color = |value: &str| {
+        value.len() == 7
+            && value.starts_with('#')
+            && value[1..]
+                .chars()
+                .all(|character| character.is_ascii_hexdigit())
+    };
+    if !valid_font {
+        return Err(AppError::user("字幕字体无效。", "Invalid ASS font family"));
+    }
+    if !(16..=120).contains(&style.font_size) || !(16..=120).contains(&style.translated_font_size) {
+        return Err(AppError::user(
+            "字幕字号需要在 16 到 120 之间。",
+            "Invalid subtitle font size",
+        ));
+    }
+    if !valid_color(&style.primary_color)
+        || !valid_color(&style.translated_color)
+        || !valid_color(&style.outline_color)
+        || !valid_color(&style.background_color)
+    {
+        return Err(AppError::user(
+            "字幕颜色格式无效。",
+            "Expected #RRGGBB subtitle color",
+        ));
+    }
+    if !(0.0..=8.0).contains(&style.outline_width) || !(0.0..=8.0).contains(&style.shadow) {
+        return Err(AppError::user(
+            "字幕描边或阴影超出允许范围。",
+            "Invalid ASS outline or shadow",
+        ));
+    }
+    if style.margin_vertical > 400
+        || !matches!(style.position.as_str(), "top" | "middle" | "bottom")
+    {
+        return Err(AppError::user(
+            "字幕位置设置无效。",
+            "Invalid subtitle position",
+        ));
+    }
+    Ok(())
+}
+
+fn ass_color(value: &str, alpha: u8) -> String {
+    let red = &value[1..3];
+    let green = &value[3..5];
+    let blue = &value[5..7];
+    format!("&H{alpha:02X}{blue}{green}{red}")
+}
+
+fn style_line(name: &str, style: &SubtitleStyle, translated: bool) -> String {
+    let font_size = if translated {
+        style.translated_font_size
+    } else {
+        style.font_size
+    };
+    let primary_color = if translated {
+        &style.translated_color
+    } else {
+        &style.primary_color
+    };
+    let alignment = match style.position.as_str() {
+        "top" => 8,
+        "middle" => 5,
+        _ => 2,
+    };
+    let border_style = if style.boxed { 3 } else { 1 };
+    let background_alpha =
+        255_u8.saturating_sub(((style.background_opacity as u16 * 255) / 100) as u8);
+    format!(
+        "Style: {name},{},{font_size},{},&H000000FF,{},{},{},0,0,0,100,100,0,0,{border_style},{},{},{alignment},80,80,{},1\n",
+        style.font_family,
+        ass_color(primary_color, 0),
+        ass_color(&style.outline_color, 0),
+        ass_color(&style.background_color, background_alpha),
+        if style.bold { -1 } else { 0 },
+        style.outline_width,
+        style.shadow,
+        style.margin_vertical,
+    )
+}
+
+fn ass_segment_text(segment: &SubtitleSegment, content: &str, style: &SubtitleStyle) -> String {
+    let source = escape_ass(&segment.source_text);
+    let translated = escape_ass(
+        segment
+            .translated_text
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(&segment.source_text),
+    );
+    match content {
+        "translated" => format!(r"{{\rTranslated}}{translated}"),
+        "bilingual" if style.translated_first => {
+            format!(r"{{\rTranslated}}{translated}\N{{\rSource}}{source}")
+        }
+        "bilingual" => format!(r"{{\rSource}}{source}\N{{\rTranslated}}{translated}"),
+        _ => format!(r"{{\rSource}}{source}"),
+    }
+}
+
+pub fn render_ass(
+    project: &SubtitleProject,
+    content: &str,
+    style: &SubtitleStyle,
+) -> Result<String, AppError> {
     validate_segments(
         &project.segments,
         project.duration_ms,
         matches!(content, "translated" | "bilingual"),
     )
     .map_err(|error| AppError::user("字幕尚未通过烧录检查。", error))?;
+    validate_style(style)?;
     let mut output = String::from(
-        "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei,48,&H00F8F8F8,&H000000FF,&H00151515,&H70000000,0,0,0,0,100,100,0,0,1,3,1,2,80,80,64,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
+        "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n",
     );
+    output.push_str(&style_line("Source", style, false));
+    output.push_str(&style_line("Translated", style, true));
+    output.push_str("\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
     for segment in &project.segments {
         output.push_str(&format!(
-            "Dialogue: 0,{},{},Default,,0,0,0,,{}\n",
+            "Dialogue: 0,{},{},Source,,0,0,0,,{}\n",
             timestamp_ass(segment.start_ms),
             timestamp_ass(segment.end_ms),
-            escape_ass(&segment_text(segment, content))
+            ass_segment_text(segment, content, style)
         ));
     }
     Ok(output)
@@ -223,11 +339,12 @@ pub async fn burn(
     project: &SubtitleProject,
     output_path: &Path,
     content: &str,
+    style: &SubtitleStyle,
     ass_path: &Path,
     cancel: &CancellationToken,
     mut on_progress: impl FnMut(f32, &str) + Send,
 ) -> Result<BurnResult, AppError> {
-    fs::write(ass_path, render_ass(project, content)?)?;
+    fs::write(ass_path, render_ass(project, content, style)?)?;
     let bitrate = source_video_bitrate(Path::new(&project.source_path), project.duration_ms).await;
     let escaped = ass_path
         .to_string_lossy()
@@ -572,9 +689,36 @@ mod tests {
         assert!(render_srt(&project(), "bilingual")
             .unwrap()
             .contains("00:00:00,000 --> 00:00:01,500"));
-        assert!(render_ass(&project(), "source")
+        assert!(render_ass(&project(), "source", &SubtitleStyle::default())
             .unwrap()
             .contains(r"Hello \{world\}"));
+    }
+
+    #[test]
+    fn renders_linked_bilingual_styles() {
+        let style = SubtitleStyle {
+            font_size: 52,
+            translated_font_size: 50,
+            primary_color: "#F8F8F8".into(),
+            translated_color: "#FFD95A".into(),
+            translated_first: true,
+            ..SubtitleStyle::default()
+        };
+        let rendered = render_ass(&project(), "bilingual", &style).unwrap();
+        assert!(rendered.contains("Style: Source,Microsoft YaHei,52"));
+        assert!(rendered.contains("Style: Translated,Microsoft YaHei,50"));
+        assert!(rendered.contains(r"{\rTranslated}你好\N{\rSource}Hello \{world\}"));
+
+        let source_style = rendered
+            .lines()
+            .find(|line| line.starts_with("Style: Source,"))
+            .unwrap()
+            .split(',')
+            .collect::<Vec<_>>();
+        assert_eq!(source_style.len(), 23);
+        assert_eq!(source_style[11], "100", "ScaleX must remain visible");
+        assert_eq!(source_style[15], "1", "BorderStyle field must not shift");
+        assert_eq!(source_style[18], "2", "Alignment field must not shift");
     }
 
     #[test]

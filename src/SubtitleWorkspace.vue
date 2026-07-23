@@ -6,6 +6,7 @@ import folderIcon from 'iconoir/icons/folder.svg?url'
 import mediaVideoIcon from 'iconoir/icons/media-video.svg?url'
 import pageIcon from 'iconoir/icons/empty-page.svg?url'
 import settingsIcon from 'iconoir/icons/settings.svg?url'
+import AppSelect from './components/ui/select/AppSelect.vue'
 import {
   analyzeSubtitleSource,
   burnSubtitles,
@@ -34,6 +35,8 @@ import type {
   MediaSubtitleAnalysis,
   SubtitleProgressEvent,
   SubtitleProject,
+  SubtitleContentMode,
+  SubtitleStyle,
 } from './types'
 
 const props = defineProps<{ initialSourcePath?: string }>()
@@ -57,6 +60,56 @@ const settings = ref<GeminiSettings>({
   openaiModel: '',
 })
 const burnVideo = ref(true)
+type SubtitlePreset = 'classic' | 'contrast' | 'yellow' | 'custom'
+
+const subtitleStyleStorageKey = 'ydlite.subtitle-style.v1'
+const stylePreset = ref<SubtitlePreset>('classic')
+const contentMode = ref<SubtitleContentMode>('bilingual')
+const syncTranslatedStyle = ref(true)
+const advancedStyleOpen = ref(false)
+const subtitleStyle = ref<SubtitleStyle>({
+  fontFamily: 'Microsoft YaHei',
+  fontSize: 48,
+  translatedFontSize: 48,
+  primaryColor: '#F8F8F8',
+  translatedColor: '#F8F8F8',
+  outlineColor: '#151515',
+  backgroundColor: '#151515',
+  backgroundOpacity: 0,
+  outlineWidth: 3,
+  shadow: 1,
+  bold: false,
+  boxed: false,
+  position: 'bottom',
+  marginVertical: 64,
+  translatedFirst: true,
+})
+
+const subtitlePresets: Array<{ id: Exclude<SubtitlePreset, 'custom'>; name: string; note: string; color: string; boxed: boolean }> = [
+  { id: 'classic', name: '经典白字', note: '清晰描边', color: '#F8F8F8', boxed: false },
+  { id: 'contrast', name: '高对比', note: '半透明底', color: '#F8F8F8', boxed: true },
+  { id: 'yellow', name: '黄色强调', note: '教程短视频', color: '#FFD95A', boxed: false },
+]
+const contentOptions = [
+  { value: 'source', label: '仅源字幕' },
+  { value: 'translated', label: '仅翻译字幕' },
+  { value: 'bilingual', label: '双语字幕' },
+]
+const fontOptions = [
+  { value: 'Microsoft YaHei', label: '微软雅黑' },
+  { value: 'Microsoft YaHei UI', label: '微软雅黑 UI' },
+  { value: 'SimHei', label: '黑体' },
+  { value: 'SimSun', label: '宋体' },
+  { value: 'Segoe UI', label: 'Segoe UI' },
+]
+const positionOptions = [
+  { value: 'bottom', label: '底部' },
+  { value: 'middle', label: '居中' },
+  { value: 'top', label: '顶部' },
+]
+const availableContentOptions = computed(() =>
+  analysis.value?.strategy === 'extract_chinese' ? contentOptions.slice(0, 1) : contentOptions,
+)
 const analyzing = ref(false)
 const processing = ref(false)
 const progress = ref<SubtitleProgressEvent | null>(null)
@@ -163,6 +216,79 @@ const generateHint = computed(() => {
   if (needsLocalAssets.value && !localRuntimeReady.value) return '请先下载运行组件'
   return ''
 })
+const resolvedSubtitleStyle = computed<SubtitleStyle>(() => ({
+  ...subtitleStyle.value,
+  translatedFontSize: syncTranslatedStyle.value
+    ? subtitleStyle.value.fontSize
+    : subtitleStyle.value.translatedFontSize,
+  translatedColor: syncTranslatedStyle.value
+    ? subtitleStyle.value.primaryColor
+    : subtitleStyle.value.translatedColor,
+}))
+const previewPositionClass = computed(() => `position-${subtitleStyle.value.position}`)
+const previewBoxStyle = computed(() => ({
+  backgroundColor: subtitleStyle.value.boxed
+    ? `${subtitleStyle.value.backgroundColor}${Math.round(subtitleStyle.value.backgroundOpacity * 2.55).toString(16).padStart(2, '0')}`
+    : 'transparent',
+}))
+const sourcePreviewStyle = computed(() => previewTextStyle(
+  subtitleStyle.value.fontSize,
+  subtitleStyle.value.primaryColor,
+))
+const translatedPreviewStyle = computed(() => previewTextStyle(
+  resolvedSubtitleStyle.value.translatedFontSize,
+  resolvedSubtitleStyle.value.translatedColor,
+))
+
+function previewTextStyle(fontSize: number, color: string) {
+  const outline = Math.max(1, subtitleStyle.value.outlineWidth / 2)
+  return {
+    color,
+    fontFamily: `"${subtitleStyle.value.fontFamily}", sans-serif`,
+    fontSize: `${Math.max(12, fontSize * 0.34)}px`,
+    fontWeight: subtitleStyle.value.bold ? '700' : '500',
+    textShadow: subtitleStyle.value.boxed
+      ? 'none'
+      : `${outline}px ${outline}px 0 ${subtitleStyle.value.outlineColor}, -${outline}px -${outline}px 0 ${subtitleStyle.value.outlineColor}, ${outline}px -${outline}px 0 ${subtitleStyle.value.outlineColor}, -${outline}px ${outline}px 0 ${subtitleStyle.value.outlineColor}`,
+  }
+}
+
+function applyPreset(preset: Exclude<SubtitlePreset, 'custom'>) {
+  const values: Record<Exclude<SubtitlePreset, 'custom'>, Partial<SubtitleStyle>> = {
+    classic: { primaryColor: '#F8F8F8', outlineColor: '#151515', outlineWidth: 3, shadow: 1, boxed: false, backgroundOpacity: 0, bold: false },
+    contrast: { primaryColor: '#F8F8F8', outlineColor: '#151515', outlineWidth: 5, shadow: 0, boxed: true, backgroundColor: '#151515', backgroundOpacity: 68, bold: true },
+    yellow: { primaryColor: '#FFD95A', outlineColor: '#151515', outlineWidth: 3, shadow: 1, boxed: false, backgroundOpacity: 0, bold: true },
+  }
+  Object.assign(subtitleStyle.value, values[preset])
+  stylePreset.value = preset
+}
+
+function markCustom() {
+  stylePreset.value = 'custom'
+}
+
+function restoreSubtitleStyle() {
+  try {
+    const saved = localStorage.getItem(subtitleStyleStorageKey)
+    if (!saved) return
+    const value = JSON.parse(saved) as {
+      preset?: SubtitlePreset
+      contentMode?: SubtitleContentMode
+      syncTranslatedStyle?: boolean
+      style?: Partial<SubtitleStyle>
+    }
+    if (value.style) Object.assign(subtitleStyle.value, value.style)
+    if (value.preset && ['classic', 'contrast', 'yellow', 'custom'].includes(value.preset)) {
+      stylePreset.value = value.preset
+    } else {
+      applyPreset('classic')
+    }
+    if (value.contentMode) contentMode.value = value.contentMode
+    if (typeof value.syncTranslatedStyle === 'boolean') syncTranslatedStyle.value = value.syncTranslatedStyle
+  } catch {
+    localStorage.removeItem(subtitleStyleStorageKey)
+  }
+}
 
 function restoreArtifacts(value: SubtitleProject | null) {
   if (!value) return
@@ -321,7 +447,7 @@ async function generateChineseSubtitles() {
       }
     }
     project.value = current
-    const content = analysis.value.strategy === 'extract_chinese' ? 'source' : 'translated'
+    const content = analysis.value.strategy === 'extract_chinese' ? 'source' : contentMode.value
     const srtPath = outputPath('.zh-CN.srt')
     subtitleOutput.value = await exportSubtitles({
       projectId: current.id,
@@ -331,7 +457,12 @@ async function generateChineseSubtitles() {
     })
     if (burnVideo.value) {
       const mp4Path = outputPath('.subtitled.mp4')
-      videoOutput.value = await burnSubtitles({ projectId: current.id, outputPath: mp4Path, content })
+      videoOutput.value = await burnSubtitles({
+        projectId: current.id,
+        outputPath: mp4Path,
+        content,
+        style: resolvedSubtitleStyle.value,
+      })
     }
     project.value = (await listSubtitleProjects()).find(item => item.id === current.id) ?? current
     restoreArtifacts(project.value)
@@ -354,9 +485,24 @@ async function cancel() {
 watch(() => props.initialSourcePath, path => {
   if (path) void chooseVideo(path)
 })
+watch(analysis, value => {
+  if (value?.strategy === 'extract_chinese') contentMode.value = 'source'
+  else if (value && contentMode.value === 'source') contentMode.value = 'bilingual'
+})
+watch(
+  [subtitleStyle, stylePreset, contentMode, syncTranslatedStyle],
+  () => localStorage.setItem(subtitleStyleStorageKey, JSON.stringify({
+    preset: stylePreset.value,
+    contentMode: contentMode.value,
+    syncTranslatedStyle: syncTranslatedStyle.value,
+    style: subtitleStyle.value,
+  })),
+  { deep: true },
+)
 
 onMounted(async () => {
   try {
+    restoreSubtitleStyle()
     await refreshProcessingSettings()
     unlisten = await onSubtitleProgress(event => {
       if (!project.value || event.projectId === project.value.id) progress.value = event
@@ -454,6 +600,145 @@ onBeforeUnmount(() => unlisten?.())
             <input v-model="burnVideo" type="checkbox" />
             <span><strong>生成字幕视频</strong></span>
           </label>
+
+          <fieldset v-if="analysis && burnVideo" class="subtitle-style-editor" :disabled="processing">
+            <div class="style-field compact-field">
+              <span>字幕内容</span>
+              <AppSelect
+                v-model="contentMode"
+                :options="availableContentOptions"
+                aria-label="字幕内容"
+              />
+            </div>
+
+            <div class="style-heading">
+              <span>字幕样式</span>
+              <small v-if="stylePreset === 'custom'">已自定义</small>
+            </div>
+            <div class="preset-grid" role="radiogroup" aria-label="字幕样式预设">
+              <button
+                v-for="preset in subtitlePresets"
+                :key="preset.id"
+                type="button"
+                class="preset-option"
+                :class="{ active: stylePreset === preset.id }"
+                role="radio"
+                :aria-checked="stylePreset === preset.id"
+                @click="applyPreset(preset.id)"
+              >
+                <i :style="{ color: preset.color, backgroundColor: preset.boxed ? '#34312f' : 'transparent' }">字</i>
+                <span><strong>{{ preset.name }}</strong><small>{{ preset.note }}</small></span>
+              </button>
+            </div>
+
+            <div class="subtitle-preview" :class="previewPositionClass">
+              <div class="preview-caption" :style="previewBoxStyle">
+                <template v-if="contentMode === 'bilingual' && subtitleStyle.translatedFirst">
+                  <span :style="translatedPreviewStyle">你好，欢迎使用 YDLite</span>
+                  <span :style="sourcePreviewStyle">Hello, welcome to YDLite</span>
+                </template>
+                <template v-else>
+                  <span v-if="contentMode !== 'translated'" :style="sourcePreviewStyle">Hello, welcome to YDLite</span>
+                  <span v-if="contentMode !== 'source'" :style="translatedPreviewStyle">你好，欢迎使用 YDLite</span>
+                </template>
+              </div>
+            </div>
+
+            <div v-if="contentMode === 'bilingual'" class="translation-link">
+              <label>
+                <input v-model="syncTranslatedStyle" type="checkbox" />
+                <span><strong>译文跟随源文</strong><small>字体、颜色和字号保持一致</small></span>
+              </label>
+            </div>
+
+            <button class="advanced-toggle" type="button" :aria-expanded="advancedStyleOpen" @click="advancedStyleOpen = !advancedStyleOpen">
+              <span>{{ advancedStyleOpen ? '收起高级设置' : '高级设置' }}</span>
+              <i :class="{ open: advancedStyleOpen }">⌄</i>
+            </button>
+
+            <div class="advanced-wrap" :class="{ open: advancedStyleOpen }">
+              <div class="advanced-inner">
+                <div class="advanced-grid primary-style-row">
+                  <div class="style-field font-field">
+                    <span>字体</span>
+                    <AppSelect
+                      v-model="subtitleStyle.fontFamily"
+                      :options="fontOptions"
+                      aria-label="字幕字体"
+                      @update:model-value="markCustom"
+                    />
+                  </div>
+                  <div class="style-field">
+                    <span>位置</span>
+                    <AppSelect
+                      v-model="subtitleStyle.position"
+                      :options="positionOptions"
+                      aria-label="字幕位置"
+                      @update:model-value="markCustom"
+                    />
+                  </div>
+                </div>
+
+                <section class="advanced-section">
+                  <span class="advanced-section-title">尺寸与位置</span>
+                  <div class="advanced-grid slider-grid">
+                    <label class="style-field range-field">
+                      <span>源文字号 <b>{{ subtitleStyle.fontSize }}</b></span>
+                      <input v-model.number="subtitleStyle.fontSize" type="range" min="24" max="80" step="1" @input="markCustom" />
+                    </label>
+                    <label class="style-field range-field">
+                      <span>底部间距 <b>{{ subtitleStyle.marginVertical }}</b></span>
+                      <input v-model.number="subtitleStyle.marginVertical" type="range" min="20" max="180" step="4" @input="markCustom" />
+                    </label>
+                  </div>
+                </section>
+
+                <section class="advanced-section">
+                  <span class="advanced-section-title">颜色与描边</span>
+                  <div class="color-grid">
+                    <label class="color-control">
+                      <span>文字</span>
+                      <input v-model="subtitleStyle.primaryColor" type="color" aria-label="文字颜色" @input="markCustom" />
+                    </label>
+                    <label class="color-control">
+                      <span>描边</span>
+                      <input v-model="subtitleStyle.outlineColor" type="color" aria-label="描边颜色" @input="markCustom" />
+                    </label>
+                  </div>
+                  <div class="outline-row">
+                    <label class="style-field range-field">
+                      <span>描边粗细 <b>{{ subtitleStyle.outlineWidth }}</b></span>
+                      <input v-model.number="subtitleStyle.outlineWidth" type="range" min="0" max="8" step="0.5" @input="markCustom" />
+                    </label>
+                    <label class="style-check compact-check">
+                      <input v-model="subtitleStyle.bold" type="checkbox" @change="markCustom" />
+                      <span>粗体</span>
+                    </label>
+                  </div>
+                </section>
+
+                <section v-if="contentMode === 'bilingual'" class="advanced-section bilingual-section">
+                  <span class="advanced-section-title">双语排列</span>
+                  <div class="bilingual-controls">
+                    <template v-if="!syncTranslatedStyle">
+                      <label class="style-field range-field">
+                        <span>译文字号 <b>{{ subtitleStyle.translatedFontSize }}</b></span>
+                        <input v-model.number="subtitleStyle.translatedFontSize" type="range" min="24" max="80" step="1" @input="markCustom" />
+                      </label>
+                      <label class="color-control translated-color">
+                        <span>译文</span>
+                        <input v-model="subtitleStyle.translatedColor" type="color" aria-label="译文颜色" @input="markCustom" />
+                      </label>
+                    </template>
+                    <label class="style-check order-check">
+                      <input v-model="subtitleStyle.translatedFirst" type="checkbox" @change="markCustom" />
+                      <span>翻译字幕显示在上方</span>
+                    </label>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </fieldset>
 
           <button class="generate-button" type="button" :disabled="analysis ? !canGenerate : analyzing" @click="generateChineseSubtitles">
             <span>{{ actionLabel }}</span>
@@ -783,6 +1068,370 @@ onBeforeUnmount(() => unlisten?.())
   display: block;
 }
 
+.subtitle-style-editor {
+  min-width: 0;
+  margin-top: 16px;
+  padding-right: 0;
+  padding-left: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--workspace-border);
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+}
+
+.subtitle-style-editor:disabled {
+  opacity: 0.62;
+}
+
+.style-heading,
+.style-field > span {
+  color: var(--workspace-subtle);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.compact-field {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.style-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.style-heading small {
+  color: var(--workspace-accent);
+  font-size: 9px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.preset-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 70px;
+  padding: 8px 5px 7px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--workspace-ink);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 140ms ease-out, background-color 140ms ease-out;
+}
+
+.preset-option:hover,
+.preset-option.active {
+  border-color: var(--workspace-accent);
+  background: var(--workspace-accent-soft);
+}
+
+.preset-option i {
+  display: grid;
+  place-items: center;
+  flex: 0 0 27px;
+  width: 27px;
+  height: 27px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 800;
+  text-shadow: 1px 1px 0 #171615, -1px -1px 0 #171615;
+}
+
+.preset-option span,
+.preset-option strong,
+.preset-option small {
+  display: block;
+  min-width: 0;
+}
+
+.preset-option strong {
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-option small {
+  margin-top: 3px;
+  color: var(--workspace-subtle);
+  font-size: 8px;
+  line-height: 1.2;
+}
+
+.subtitle-preview {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-height: 126px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 9px;
+  background:
+    linear-gradient(180deg, transparent 0 62%, rgba(20, 18, 16, 0.34)),
+    radial-gradient(circle at 72% 22%, rgba(222, 194, 150, 0.34), transparent 22%),
+    linear-gradient(135deg, #777b76, #313735 58%, #202423);
+}
+
+.subtitle-preview::before {
+  position: absolute;
+  inset: 16px 18px auto auto;
+  width: 54px;
+  height: 22px;
+  border: 1px solid rgba(247, 241, 232, 0.22);
+  border-radius: 99px;
+  content: '';
+}
+
+.preview-caption {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  max-width: calc(100% - 28px);
+  padding: 3px 7px;
+  border-radius: 3px;
+  line-height: 1.28;
+  text-align: center;
+}
+
+.position-bottom .preview-caption { bottom: 12px; }
+.position-middle .preview-caption { top: 50%; transform: translateY(-50%); }
+.position-top .preview-caption { top: 12px; }
+
+.preview-caption span {
+  display: block;
+  white-space: nowrap;
+}
+
+.translation-link {
+  margin-top: 11px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--workspace-border);
+}
+
+.translation-link > label:first-child {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.translation-link input[type='checkbox'],
+.style-check input {
+  width: 15px;
+  height: 15px;
+  margin: 1px 0 0;
+  accent-color: var(--workspace-accent);
+}
+
+.translation-link strong,
+.translation-link small {
+  display: block;
+}
+
+.translation-link strong {
+  font-size: 11px;
+}
+
+.translation-link small {
+  margin-top: 2px;
+  color: var(--workspace-subtle);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--workspace-muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.advanced-toggle i {
+  font-size: 16px;
+  font-style: normal;
+  transition: transform 160ms var(--workspace-ease);
+}
+
+.advanced-toggle i.open {
+  transform: rotate(180deg);
+}
+
+.advanced-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 180ms var(--workspace-ease);
+}
+
+.advanced-wrap.open {
+  grid-template-rows: 1fr;
+}
+
+.advanced-wrap.open .advanced-inner {
+  overflow: visible;
+}
+
+.advanced-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.primary-style-row {
+  grid-template-columns: minmax(0, 1.25fr) minmax(104px, 0.75fr);
+  padding: 7px 0 5px;
+}
+
+.advanced-section {
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--workspace-border);
+}
+
+.advanced-section-title {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--workspace-subtle);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+
+.style-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.style-field b {
+  color: var(--workspace-ink);
+  font-size: 9px;
+}
+
+.range-field > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.slider-grid {
+  padding: 0;
+}
+
+.range-field input[type='range'] {
+  width: 100%;
+  min-height: 20px;
+  margin: 0;
+  accent-color: var(--workspace-accent);
+}
+
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.color-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 42px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  color: var(--workspace-muted);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.color-control input {
+  flex: 0 0 31px;
+  width: 31px;
+  height: 31px;
+  padding: 2px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 6px;
+  background: var(--workspace-surface);
+  cursor: pointer;
+}
+
+.outline-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 11px;
+}
+
+.style-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  color: var(--workspace-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.compact-check {
+  min-height: 38px;
+  padding: 0 2px 0 12px;
+  border-left: 1px solid var(--workspace-border);
+}
+
+.bilingual-section {
+  padding-bottom: 2px;
+}
+
+.bilingual-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 11px;
+}
+
+.order-check {
+  grid-column: 1 / -1;
+  min-height: 28px;
+}
+
+.translated-color {
+  min-width: 92px;
+}
+
 .burn-option strong {
   color: var(--workspace-ink);
   font-size: 12px;
@@ -968,6 +1617,8 @@ onBeforeUnmount(() => unlisten?.())
 
 .settings-button:focus-visible,
 .file-card:focus-visible,
+.preset-option:focus-visible,
+.advanced-toggle:focus-visible,
 .generate-button:focus-visible,
 .task-progress button:focus-visible,
 .output-actions button:focus-visible {
@@ -998,7 +1649,7 @@ onBeforeUnmount(() => unlisten?.())
 
 @container workspace (min-width: 900px) {
   .subtitle-layout {
-    grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
+    grid-template-columns: minmax(0, 1.35fr) minmax(330px, 0.82fr);
     gap: clamp(28px, 4vw, 48px);
   }
 

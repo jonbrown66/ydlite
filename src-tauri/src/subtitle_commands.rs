@@ -1618,6 +1618,7 @@ async fn burn_subtitles_inner(
         &project,
         &output,
         &request.content,
+        &request.style,
         &ass,
         cancel,
         |percent, encoder| {

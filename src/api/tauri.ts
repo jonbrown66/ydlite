@@ -1,7 +1,7 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import type { CacheStatus, CostEstimate, DependencyStatus, DownloadProgressEvent, DownloadRequest, GeminiSettings, MediaSubtitleAnalysis, ParseVideoRequest, SubtitleProgressEvent, SubtitleProject, SubtitleSegment, ToolInstallEvent, VideoInfo, WhisperDownloadEvent, WhisperModelInfo, WhisperRuntimeInfo } from '../types'
+import type { CacheStatus, CostEstimate, DependencyStatus, DownloadProgressEvent, DownloadRequest, GeminiSettings, MediaSubtitleAnalysis, ParseVideoRequest, SubtitleProgressEvent, SubtitleProject, SubtitleSegment, SubtitleStyle, ToolInstallEvent, VideoInfo, WhisperDownloadEvent, WhisperModelInfo, WhisperRuntimeInfo } from '../types'
 
 export function checkDependencies() {
   return invoke<DependencyStatus>('check_dependencies')
@@ -129,7 +129,7 @@ export const saveSubtitleSegments = (projectId: string, segments: SubtitleSegmen
   invoke<SubtitleProject>('save_subtitle_segments', { request: { projectId, segments } })
 export const exportSubtitles = (request: { projectId: string; outputPath: string; format: string; content: string }) =>
   invoke<string>('export_subtitles', { request })
-export const burnSubtitles = (request: { projectId: string; outputPath: string; content: string }) =>
+export const burnSubtitles = (request: { projectId: string; outputPath: string; content: string; style: SubtitleStyle }) =>
   invoke<string>('burn_subtitles', { request })
 export const onSubtitleProgress = (handler: (event: SubtitleProgressEvent) => void) =>
   listen<SubtitleProgressEvent>('subtitle://progress', event => handler(event.payload))

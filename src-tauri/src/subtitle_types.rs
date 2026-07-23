@@ -260,12 +260,107 @@ pub struct ExportSubtitlesRequest {
     pub content: String,
 }
 
+fn default_subtitle_font_family() -> String {
+    "Microsoft YaHei".to_string()
+}
+
+fn default_subtitle_font_size() -> u16 {
+    48
+}
+
+fn default_subtitle_primary_color() -> String {
+    "#F8F8F8".to_string()
+}
+
+fn default_subtitle_outline_color() -> String {
+    "#151515".to_string()
+}
+
+fn default_subtitle_background_color() -> String {
+    "#151515".to_string()
+}
+
+fn default_subtitle_outline_width() -> f32 {
+    3.0
+}
+
+fn default_subtitle_shadow() -> f32 {
+    1.0
+}
+
+fn default_subtitle_position() -> String {
+    "bottom".to_string()
+}
+
+fn default_subtitle_margin_vertical() -> u16 {
+    64
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleStyle {
+    #[serde(default = "default_subtitle_font_family")]
+    pub font_family: String,
+    #[serde(default = "default_subtitle_font_size")]
+    pub font_size: u16,
+    #[serde(default = "default_subtitle_font_size")]
+    pub translated_font_size: u16,
+    #[serde(default = "default_subtitle_primary_color")]
+    pub primary_color: String,
+    #[serde(default = "default_subtitle_primary_color")]
+    pub translated_color: String,
+    #[serde(default = "default_subtitle_outline_color")]
+    pub outline_color: String,
+    #[serde(default = "default_subtitle_background_color")]
+    pub background_color: String,
+    #[serde(default)]
+    pub background_opacity: u8,
+    #[serde(default = "default_subtitle_outline_width")]
+    pub outline_width: f32,
+    #[serde(default = "default_subtitle_shadow")]
+    pub shadow: f32,
+    #[serde(default)]
+    pub bold: bool,
+    #[serde(default)]
+    pub boxed: bool,
+    #[serde(default = "default_subtitle_position")]
+    pub position: String,
+    #[serde(default = "default_subtitle_margin_vertical")]
+    pub margin_vertical: u16,
+    #[serde(default)]
+    pub translated_first: bool,
+}
+
+impl Default for SubtitleStyle {
+    fn default() -> Self {
+        Self {
+            font_family: default_subtitle_font_family(),
+            font_size: default_subtitle_font_size(),
+            translated_font_size: default_subtitle_font_size(),
+            primary_color: default_subtitle_primary_color(),
+            translated_color: default_subtitle_primary_color(),
+            outline_color: default_subtitle_outline_color(),
+            background_color: default_subtitle_background_color(),
+            background_opacity: 0,
+            outline_width: default_subtitle_outline_width(),
+            shadow: default_subtitle_shadow(),
+            bold: false,
+            boxed: false,
+            position: default_subtitle_position(),
+            margin_vertical: default_subtitle_margin_vertical(),
+            translated_first: false,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BurnSubtitlesRequest {
     pub project_id: String,
     pub output_path: String,
     pub content: String,
+    #[serde(default)]
+    pub style: SubtitleStyle,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -458,5 +553,18 @@ mod tests {
         let project: SubtitleProject = serde_json::from_value(value).unwrap();
         assert!(project.performance.stages.is_empty());
         assert_eq!(project.performance.uploaded_bytes, 0);
+    }
+
+    #[test]
+    fn old_burn_requests_receive_default_subtitle_style() {
+        let value = serde_json::json!({
+            "projectId": "legacy",
+            "outputPath": "demo.mp4",
+            "content": "translated"
+        });
+        let request: BurnSubtitlesRequest = serde_json::from_value(value).unwrap();
+        assert_eq!(request.style.font_family, "Microsoft YaHei");
+        assert_eq!(request.style.font_size, 48);
+        assert_eq!(request.style.translated_font_size, 48);
     }
 }

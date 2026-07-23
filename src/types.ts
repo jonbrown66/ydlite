@@ -104,6 +104,26 @@ export type SubtitleSegment = {
   translatedText?: string | null
 }
 
+export type SubtitleContentMode = 'source' | 'translated' | 'bilingual'
+
+export type SubtitleStyle = {
+  fontFamily: string
+  fontSize: number
+  translatedFontSize: number
+  primaryColor: string
+  translatedColor: string
+  outlineColor: string
+  backgroundColor: string
+  backgroundOpacity: number
+  outlineWidth: number
+  shadow: number
+  bold: boolean
+  boxed: boolean
+  position: 'top' | 'middle' | 'bottom'
+  marginVertical: number
+  translatedFirst: boolean
+}
+
 export type SubtitleUsage = {
   inputTokens: number
   outputTokens: number

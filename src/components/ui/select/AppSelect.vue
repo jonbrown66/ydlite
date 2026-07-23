@@ -21,6 +21,7 @@ const emit = defineEmits<{
 
 const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
+const menu = ref<HTMLElement | null>(null)
 const open = ref(false)
 const activeIndex = ref(0)
 const selectedIndex = computed(() => {
@@ -39,6 +40,7 @@ function show() {
   if (props.disabled) return
   activeIndex.value = selectedIndex.value
   open.value = true
+  scrollActiveOption()
 }
 
 function close(restoreFocus = false) {
@@ -59,6 +61,14 @@ function choose(option: AppSelectOption) {
 function move(step: number) {
   if (!props.options.length) return
   activeIndex.value = (activeIndex.value + step + props.options.length) % props.options.length
+  scrollActiveOption()
+}
+
+function scrollActiveOption() {
+  void nextTick(() => {
+    const option = menu.value?.querySelectorAll<HTMLElement>('.app-select-option')[activeIndex.value]
+    option?.scrollIntoView({ block: 'nearest' })
+  })
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -78,9 +88,11 @@ function onKeydown(event: KeyboardEvent) {
   } else if (event.key === 'Home') {
     event.preventDefault()
     activeIndex.value = 0
+    scrollActiveOption()
   } else if (event.key === 'End') {
     event.preventDefault()
     activeIndex.value = Math.max(0, props.options.length - 1)
+    scrollActiveOption()
   } else if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
     const option = props.options[activeIndex.value]
@@ -120,7 +132,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
     </button>
 
     <Transition name="select-pop">
-      <div v-if="open" class="app-select-menu" role="listbox" :aria-label="ariaLabel">
+      <div v-if="open" ref="menu" class="app-select-menu" role="listbox" :aria-label="ariaLabel">
         <button
           v-for="(option, index) in options"
           :id="`select-option-${index}`"
@@ -214,11 +226,27 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   display: grid;
   gap: 2px;
   padding: 5px;
-  overflow: hidden;
+  max-height: min(248px, calc(100vh - 96px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--workspace-border-strong) transparent;
+  scrollbar-width: thin;
   border: 1px solid var(--workspace-border);
   border-radius: 9px;
   background: var(--workspace-surface);
   box-shadow: var(--workspace-shadow);
+}
+
+.app-select-menu::-webkit-scrollbar {
+  width: 7px;
+}
+
+.app-select-menu::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 99px;
+  background: var(--workspace-border-strong);
+  background-clip: padding-box;
 }
 
 .app-select-option {
