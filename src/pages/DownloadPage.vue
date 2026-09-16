@@ -6,6 +6,7 @@ import checkSquareIcon from 'iconoir/icons/check-square.svg?url'
 import copyIcon from 'iconoir/icons/copy.svg?url'
 import cookieIcon from 'iconoir/icons/cookie.svg?url'
 import downloadIcon from 'iconoir/icons/download.svg?url'
+import emptyPageIcon from 'iconoir/icons/empty-page.svg?url'
 import folderIcon from 'iconoir/icons/folder.svg?url'
 import mediaVideoIcon from 'iconoir/icons/media-video.svg?url'
 import navArrowRightIcon from 'iconoir/icons/nav-arrow-right.svg?url'
@@ -18,6 +19,7 @@ import {
   cancelDownload,
   checkDependencies,
   checkYtdlpUpdate,
+  extractSubtitles,
   getToolsDirectory,
   installMissingTools,
   onDownloadProgress,
@@ -31,15 +33,20 @@ import {
   updateYtdlp,
 } from '../api/tauri'
 import { AppSelect } from '@/components/ui/select'
+import AppDialog from '@/components/ui/AppDialog.vue'
+import { useTasksStore } from '@/stores/tasks'
+import { useActivityStore } from '@/stores/activity'
 import type { CookieSource, DependencyStatus, DownloadHistoryItem, DownloadProgressEvent, ToolInstallEvent, VideoInfo, DownloadMode } from '../types'
 
 const router = useRouter()
+const activity = useActivityStore()
 const icons = {
   check: checkIcon,
   checkSquare: checkSquareIcon,
   copy: copyIcon,
   cookie: cookieIcon,
   download: downloadIcon,
+  emptyPage: emptyPageIcon,
   folder: folderIcon,
   mediaVideo: mediaVideoIcon,
   navArrowRight: navArrowRightIcon,
@@ -67,8 +74,14 @@ const errorMessage = ref('')
 const errorDetail = ref('')
 const logs = ref<string[]>([])
 const completedFilePath = ref('')
+const extractedSubtitlePath = ref('')
+const extractingSubtitles = ref(false)
 const displayPercent = ref(0)
-const history = ref<DownloadHistoryItem[]>([])
+const tasks = useTasksStore()
+const history = computed(() => tasks.downloads)
+const cancelling = ref(false)
+const logsOpen = ref(false)
+const urlInput = ref<HTMLInputElement | null>(null)
 const dragActive = ref(false)
 const toolsDir = ref('')
 const showInstallConfirm = ref(false)
@@ -80,6 +93,9 @@ const detailsSection = ref<HTMLElement | null>(null)
 let copiedHistoryTimer: number | undefined
 let unlistenDownloadProgress: (() => void) | undefined
 let unlistenToolProgress: (() => void) | undefined
+let unregisterDownloadCanceller: (() => void) | undefined
+let progressAnimationFrame: number | undefined
+let pendingDisplayPercent: number | undefined
 const lastParsedUrl = ref('')
 const clipboardTipUrl = ref('')
 const showClipboardTip = ref(false)
@@ -98,9 +114,9 @@ const queueCurrentIndex = ref(0)
 const queueCompleted = ref(0)
 const queueFailed = ref(0)
 const currentDownloadTitle = ref('')
+const currentDownloadUrl = ref('')
 
-let queueResolve: (() => void) | null = null
-let queueReject: ((err?: any) => void) | null = null
+let queueStopRequested = false
 
 const missingTools = computed(() => {
   const missing: string[] = []
@@ -109,8 +125,9 @@ const missingTools = computed(() => {
   return missing
 })
 
-const canParse = computed(() => Boolean(url.value.trim() && !parsing.value && !downloading.value))
-const canDownload = computed(() => Boolean(video.value && saveDir.value && !downloading.value))
+const canParse = computed(() => Boolean(url.value.trim() && !parsing.value && !downloading.value && !extractingSubtitles.value))
+const canDownload = computed(() => Boolean(video.value && saveDir.value && !parsing.value && !downloading.value && !extractingSubtitles.value && !hasMissingTools.value))
+const selectedCount = computed(() => video.value?.entries?.filter(entry => selectedEntries.value[entry.url]).length ?? 0)
 const hasMissingTools = computed(() => missingTools.value.length > 0)
 const depsChecked = computed(() => deps.value !== null)
 const toolStatusText = computed(() => {
@@ -124,14 +141,59 @@ const progressPercent = computed(() => {
   return Math.max(0, Math.min(100, displayPercent.value))
 })
 
+function resetDisplayedProgress() {
+  if (progressAnimationFrame !== undefined) {
+    window.cancelAnimationFrame(progressAnimationFrame)
+    progressAnimationFrame = undefined
+  }
+  pendingDisplayPercent = undefined
+  displayPercent.value = 0
+}
+
+function updateDisplayedProgress(percent: number, terminal = false) {
+  const normalized = Math.max(0, Math.min(100, percent))
+  const target = terminal ? 100 : Math.min(normalized, 99.8)
+
+  if (terminal) {
+    if (progressAnimationFrame !== undefined) {
+      window.cancelAnimationFrame(progressAnimationFrame)
+      progressAnimationFrame = undefined
+    }
+    pendingDisplayPercent = undefined
+    displayPercent.value = 100
+    return
+  }
+
+  pendingDisplayPercent = Math.max(displayPercent.value, pendingDisplayPercent ?? 0, target)
+  if (progressAnimationFrame !== undefined) return
+
+  progressAnimationFrame = window.requestAnimationFrame(() => {
+    displayPercent.value = Math.max(displayPercent.value, pendingDisplayPercent ?? 0)
+    pendingDisplayPercent = undefined
+    progressAnimationFrame = undefined
+  })
+}
+
+const queueProgressPercent = computed(() => {
+  if (!queueTotal.value) return 0
+  const settledItems = queueCompleted.value + queueFailed.value
+  const terminal = ['finished', 'cancelled', 'error'].includes(progress.value?.status || '')
+  const completedThroughCurrent = terminal ? Math.max(settledItems, queueCurrentIndex.value) : settledItems
+  const currentItemProgress = queueActive.value && !terminal && queueCurrentIndex.value > completedThroughCurrent
+    ? progressPercent.value / 100
+    : 0
+  return Math.max(0, Math.min(100, ((completedThroughCurrent + currentItemProgress) / queueTotal.value) * 100))
+})
+
 const progressStatusText = computed(() => {
+  if (cancelling.value) return '正在取消'
   switch (progress.value?.status) {
     case 'starting':
       return '正在准备'
     case 'downloading':
       return '正在下载'
     case 'processing':
-      return '正在处理'
+      return '正在合并或转换音视频'
     case 'finished':
       return '已完成'
     case 'cancelled':
@@ -185,7 +247,7 @@ const availableFormats = computed(() => {
   formatsList.sort((a, b) => b.height - a.height)
   
   formatsList.push({
-    label: '仅音频（最佳 M4A/Opus）',
+    label: '仅音频 · MP3',
     formatId: 'bestaudio',
     height: 0,
     type: 'audio'
@@ -212,10 +274,10 @@ function iconStyle(name: IconName) {
 onMounted(() => {
   window.addEventListener('focus', checkClipboard)
   defaultDir.value = localStorage.getItem('ydlite.defaultDir') || ''
-  history.value = loadHistory()
   saveDir.value = defaultDir.value
   setAsDefault.value = Boolean(defaultDir.value)
   cookiesFilePath.value = localStorage.getItem('ydlite.cookiesFilePath') || ''
+  unregisterDownloadCanceller = activity.registerDownloadCanceller(handleGlobalDownloadCancel)
   void Promise.all([
     onDownloadProgress(handleProgress),
     onToolInstallProgress(handleToolInstallProgress),
@@ -232,8 +294,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (copiedHistoryTimer) window.clearTimeout(copiedHistoryTimer)
+  if (progressAnimationFrame !== undefined) window.cancelAnimationFrame(progressAnimationFrame)
   unlistenDownloadProgress?.()
   unlistenToolProgress?.()
+  unregisterDownloadCanceller?.()
   window.removeEventListener('focus', checkClipboard)
 })
 
@@ -315,11 +379,13 @@ async function scrollToVideoDetails() {
 }
 
 async function handleParse() {
+  if (!canParse.value) return
   clearError()
   video.value = null
   completedFilePath.value = ''
+  extractedSubtitlePath.value = ''
   progress.value = null
-  displayPercent.value = 0
+  resetDisplayedProgress()
   parsing.value = true
   showClipboardTip.value = false
   selectedEntries.value = {}
@@ -365,15 +431,18 @@ function handleDefaultToggle() {
 }
 
 async function handleDownload(targetUrl?: string) {
+  if (!canDownload.value) return
   clearError()
   logs.value = []
   completedFilePath.value = ''
-  displayPercent.value = 0
+  extractedSubtitlePath.value = ''
+  resetDisplayedProgress()
   progress.value = { status: 'starting' }
   downloading.value = true
   if (setAsDefault.value && saveDir.value) saveDefaultDir(saveDir.value)
   
   const downloadUrl = targetUrl || video.value?.resolvedUrl || url.value
+  currentDownloadUrl.value = downloadUrl
   let mode: DownloadMode = 'best'
   let formatId: string | null = null
 
@@ -387,55 +456,79 @@ async function handleDownload(targetUrl?: string) {
   }
 
   try {
+    activity.beginDownload({ title: video.value?.title || '视频下载' })
     const activeCookieSource = video.value?.cookieSource || selectedCookieSource()
     await startDownload({ url: downloadUrl, dir: saveDir.value, mode, formatId, options: { cookieSource: activeCookieSource } })
   } catch (error) {
     if (progress.value?.status !== 'cancelled') {
       showError(error, '下载失败，请查看详情后重试。')
+      activity.finishDownload({ state: 'failed', detail: '下载失败，请查看详情后重试。' })
     }
   } finally {
     if (!queueActive.value) {
       downloading.value = false
+      cancelling.value = false
     }
   }
 }
 
-function downloadPromise(targetUrl: string, title: string) {
-  return new Promise<void>(async (resolve, reject) => {
-    queueResolve = resolve
-    queueReject = reject
-    
-    logs.value = []
-    completedFilePath.value = ''
-    displayPercent.value = 0
-    progress.value = { status: 'starting' }
-    downloading.value = true
-    currentDownloadTitle.value = title
+async function handleExtractSubtitles() {
+  if (!video.value || video.value.isPlaylist || !saveDir.value || extractingSubtitles.value) return
 
-    let mode: DownloadMode = 'best'
-    let formatId: string | null = null
+  clearError()
+  extractedSubtitlePath.value = ''
+  extractingSubtitles.value = true
+  try {
+    extractedSubtitlePath.value = await extractSubtitles({
+      url: video.value.resolvedUrl || url.value,
+      dir: saveDir.value,
+      title: video.value.title,
+      options: { cookieSource: video.value.cookieSource || selectedCookieSource() },
+    })
+  } catch (error) {
+    showError(error, '未能提取站点字幕，请查看详情。')
+  } finally {
+    extractingSubtitles.value = false
+  }
+}
 
-    if (selectedFormatId.value) {
-      if (selectedFormatId.value === 'bestaudio') {
-        mode = 'mp3'
-      } else {
-        mode = 'custom'
-        formatId = selectedFormatId.value
-      }
+async function downloadPromise(targetUrl: string, title: string) {
+  logs.value = []
+  completedFilePath.value = ''
+  resetDisplayedProgress()
+  progress.value = { status: 'starting' }
+  downloading.value = true
+  currentDownloadTitle.value = title
+  currentDownloadUrl.value = targetUrl
+
+  let mode: DownloadMode = 'best'
+  let formatId: string | null = null
+
+  if (selectedFormatId.value) {
+    if (selectedFormatId.value === 'bestaudio') {
+      mode = 'mp3'
+    } else {
+      mode = 'custom'
+      formatId = selectedFormatId.value
     }
+  }
 
-    try {
-      const activeCookieSource = video.value?.cookieSource || selectedCookieSource()
-      await startDownload({ url: targetUrl, dir: saveDir.value, mode, formatId, options: { cookieSource: activeCookieSource } })
-    } catch (err) {
-      downloading.value = false
-      reject(err)
-    }
+  activity.beginDownload({
+    title,
+    queue: {
+      total: queueTotal.value,
+      current: queueCurrentIndex.value,
+      completed: queueCompleted.value,
+      failed: queueFailed.value,
+    },
   })
+  const activeCookieSource = video.value?.cookieSource || selectedCookieSource()
+  // IPC completion owns queue advancement; progress events can arrive before rejection.
+  await startDownload({ url: targetUrl, dir: saveDir.value, mode, formatId, options: { cookieSource: activeCookieSource } })
 }
 
 async function handleBatchDownload() {
-  if (!video.value?.entries || !saveDir.value) return
+  if (!canDownload.value || !video.value?.entries || queueActive.value) return
   
   const selectedList = video.value.entries.filter(e => selectedEntries.value[e.url])
   if (selectedList.length === 0) {
@@ -443,36 +536,64 @@ async function handleBatchDownload() {
     return
   }
 
+  clearError()
+  queueStopRequested = false
   queueActive.value = true
+  if (setAsDefault.value && saveDir.value) saveDefaultDir(saveDir.value)
   queueTotal.value = selectedList.length
   queueCurrentIndex.value = 0
   queueCompleted.value = 0
   queueFailed.value = 0
 
   for (let i = 0; i < selectedList.length; i++) {
-    if (!queueActive.value) break
+    if (queueStopRequested) break
     queueCurrentIndex.value = i + 1
     const item = selectedList[i]
     
     try {
       await downloadPromise(item.url, item.title)
-      queueCompleted.value++
+      if (progress.value?.status === 'cancelled') queueStopRequested = true
+      else queueCompleted.value++
     } catch (e) {
       queueFailed.value++
+      showError(e, '队列中的视频下载失败，请查看详情。')
     }
+    activity.updateDownloadQueue({
+      total: queueTotal.value,
+      current: queueCurrentIndex.value,
+      completed: queueCompleted.value,
+      failed: queueFailed.value,
+      active: queueActive.value,
+    }, currentDownloadTitle.value || item.title)
   }
 
+  const cancelled = queueStopRequested
   queueActive.value = false
   downloading.value = false
   currentDownloadTitle.value = ''
+  cancelling.value = false
+  activity.finishDownload({
+    state: cancelled ? 'cancelled' : queueFailed.value > 0 ? 'failed' : 'completed',
+    detail: cancelled
+      ? '下载队列已取消'
+      : queueFailed.value
+        ? `队列已完成：${queueCompleted.value} 个成功，${queueFailed.value} 个失败`
+        : `下载队列已完成：${queueCompleted.value} 个视频`,
+  })
 }
 
 function cancelQueue() {
-  queueActive.value = false
+  queueStopRequested = true
   void handleCancel()
 }
 
+async function handleGlobalDownloadCancel() {
+  if (queueActive.value) queueStopRequested = true
+  await handleCancel()
+}
+
 function selectAllEntries(val: boolean) {
+  if (downloading.value || queueActive.value) return
   if (!video.value?.entries) return
   video.value.entries.forEach(e => {
     selectedEntries.value[e.url] = val
@@ -481,10 +602,13 @@ function selectAllEntries(val: boolean) {
 
 
 async function handleCancel() {
-  await cancelDownload()
-  progress.value = { status: 'cancelled', message: '下载已取消。' }
-  displayPercent.value = 0
-  downloading.value = false
+  if (cancelling.value) return
+  cancelling.value = true
+  try { await cancelDownload() }
+  catch (error) {
+    cancelling.value = false
+    showError(error, '取消失败，请重试。')
+  }
 }
 
 async function handleInstallTools() {
@@ -549,40 +673,31 @@ async function handleOpenParentFolder() {
 }
 
 function handleProgress(event: DownloadProgressEvent) {
+  if (event.line) {
+    logs.value.push(event.line)
+    if (logs.value.length > 1000) logs.value.splice(0, logs.value.length - 1000)
+  }
+  if (event.status === 'log') return
+
   const nextEvent = event.status === 'finished' ? { ...event, percent: event.percent ?? 100 } : event
   progress.value = nextEvent
   if (nextEvent.status === 'finished') {
-    displayPercent.value = 100
+    updateDisplayedProgress(100, true)
   } else if (typeof nextEvent.percent === 'number') {
-    displayPercent.value = Math.max(displayPercent.value, nextEvent.percent)
+    updateDisplayedProgress(nextEvent.percent)
   }
   if (event.filePath) completedFilePath.value = event.filePath
-  if (event.line) logs.value.push(event.line)
   if (event.status === 'finished' && event.filePath && video.value) {
     addHistory({
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       title: currentDownloadTitle.value || video.value.title,
       extractor: video.value.extractor,
       filePath: event.filePath,
-      url: url.value,
+      url: currentDownloadUrl.value || url.value,
       completedAt: new Date().toISOString(),
     })
   }
 
-  if (event.status === 'finished' || event.status === 'cancelled' || event.status === 'error') {
-    if (event.status === 'finished' && queueResolve) {
-      queueResolve()
-      queueResolve = null
-      queueReject = null
-    } else if (queueReject) {
-      queueReject(event.status)
-      queueResolve = null
-      queueReject = null
-    }
-    if (!queueActive.value) {
-      downloading.value = false
-    }
-  }
 }
 
 async function copyHistoryUrl(item: DownloadHistoryItem) {
@@ -608,9 +723,7 @@ async function openHistoryFolder(item: DownloadHistoryItem) {
 }
 
 function removeHistoryItem(item: DownloadHistoryItem) {
-  const next = history.value.filter((existing) => existing.id !== item.id)
-  history.value = next
-  localStorage.setItem('ydlite.history', JSON.stringify(next))
+  tasks.removeDownload(item.id)
 }
 
 function handleDragOver(event: DragEvent) {
@@ -655,6 +768,11 @@ function clearError() {
 
 function friendlyErrorMessage(message: string, detail: string) {
   const text = `${message}\n${detail}`.toLowerCase()
+  if (text.includes('没有可提取的站点字幕') || text.includes('did not return any subtitle files')) {
+    return completedFilePath.value
+      ? '未发现站点字幕。可点击“创建字幕”使用语音识别生成字幕。'
+      : '未发现站点字幕。该视频未提供人工或自动字幕。'
+  }
   if (text.includes('未检测到 yt-dlp') || (text.includes('yt-dlp') && (text.includes('not found') || text.includes('no such file') || text.includes('unable to execute')))) {
     return '无法启动 yt-dlp。请先检查工具，缺失时再安装。'
   }
@@ -696,21 +814,19 @@ function friendlyErrorMessage(message: string, detail: string) {
   return message
 }
 
-function loadHistory() {
-  try {
-    const raw = localStorage.getItem('ydlite.history')
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.slice(0, 10) as DownloadHistoryItem[] : []
-  } catch {
-    return []
-  }
-}
-
 function addHistory(item: DownloadHistoryItem) {
-  const next = [item, ...history.value.filter((existing) => existing.filePath !== item.filePath)].slice(0, 10)
-  history.value = next
-  localStorage.setItem('ydlite.history', JSON.stringify(next))
+  try { tasks.addDownload(item) }
+  catch (error) { showError(error, '文件已下载，但无法保存历史记录。') }
+}
+function downloadNext() {
+  url.value = ''
+  video.value = null
+  progress.value = null
+  completedFilePath.value = ''
+  extractedSubtitlePath.value = ''
+  logs.value = []
+  clearError()
+  void nextTick(() => urlInput.value?.focus())
 }
 
 function formatHistoryTime(value: string) {
@@ -728,6 +844,8 @@ function formatHistoryTime(value: string) {
       <div class="input-row-container">
         <div class="input-row">
           <input
+            ref="urlInput"
+            aria-label="视频或音频链接"
             v-model="url"
             class="url-input"
             type="url"
@@ -752,7 +870,7 @@ function formatHistoryTime(value: string) {
         </div>
         <div v-if="cookiesFilePath" class="cookies-inline-status">
           <span :title="cookiesFilePath">cookies.txt: {{ cookiesFilePath }}</span>
-          <button class="link-button compact" type="button" :disabled="parsing || downloading" @click="clearCookiesFile">清除</button>
+          <button class="link-button compact" type="button" :disabled="parsing || downloading || extractingSubtitles" @click="clearCookiesFile">清除</button>
         </div>
         <Transition name="fade">
           <div v-if="showClipboardTip" class="clipboard-tip-bubble">
@@ -764,6 +882,19 @@ function formatHistoryTime(value: string) {
           </div>
         </Transition>
       </div>
+
+      <Transition name="fade">
+        <section v-if="depsChecked && hasMissingTools" class="download-readiness-card" aria-live="polite">
+          <span class="download-readiness-mark"><span class="icon" aria-hidden="true" :style="iconStyle('settings')" /></span>
+          <div>
+            <strong>下载前需要安装 {{ missingTools.join('、') }}</strong>
+            <p>仅安装当前下载所需的工具；不会额外安装其他下载器。</p>
+          </div>
+          <button class="button" type="button" :disabled="installing" @click="openInstallConfirm">
+            {{ installing ? '正在安装' : '去安装' }}
+          </button>
+        </section>
+      </Transition>
 
       <details class="tool-disclosure">
         <summary>
@@ -781,7 +912,7 @@ function formatHistoryTime(value: string) {
               <span class="status-square" />
               <span :title="deps?.ffmpeg_path || ''">ffmpeg {{ deps?.ffmpeg_ok ? '可用' : '缺失' }}</span>
             </div>
-            <button class="link-button" type="button" :disabled="loadingDeps || parsing || downloading" @click="handleCheckTools">
+            <button class="link-button" type="button" :disabled="loadingDeps || parsing || downloading || extractingSubtitles" @click="handleCheckTools">
               <span class="icon" aria-hidden="true" :style="iconStyle('check')" />
               <span>{{ loadingDeps ? '正在检查' : '重新检查' }}</span>
             </button>
@@ -811,7 +942,7 @@ function formatHistoryTime(value: string) {
           </div>
           <div class="video-meta">
             <span class="label">{{ video.extractor || 'video' }}</span>
-            <h1>{{ video.title }}</h1>
+            <h2>{{ video.title }}</h2>
             <p v-if="video.uploader || video.duration">{{ video.uploader || '作者未知' }} · {{ durationText }}</p>
             <p class="parse-note">{{ video.parseStrategy }} · {{ video.site }}</p>
           </div>
@@ -849,19 +980,19 @@ function formatHistoryTime(value: string) {
             <AppSelect
               v-model="selectedFormatId"
               :options="formatOptions"
-              :disabled="downloading || queueActive"
+              :disabled="downloading || queueActive || extractingSubtitles"
               aria-label="下载格式"
             />
           </div>
 
           <div class="path-row">
             <div class="path-display" :title="saveDir || '尚未选择文件夹'">{{ saveDir || '选择保存文件夹' }}</div>
-            <button class="button icon-button" type="button" title="选择文件夹" aria-label="选择文件夹" :disabled="downloading || queueActive" @click="handleSelectDir">
+            <button class="button icon-button" type="button" title="选择文件夹" aria-label="选择文件夹" :disabled="downloading || queueActive || extractingSubtitles" @click="handleSelectDir">
               <span class="icon" aria-hidden="true" :style="iconStyle('folder')" />
             </button>
           </div>
           <label class="check-row">
-            <input v-model="setAsDefault" type="checkbox" :disabled="downloading || queueActive" @change="handleDefaultToggle" />
+            <input v-model="setAsDefault" type="checkbox" :disabled="downloading || queueActive || extractingSubtitles" @change="handleDefaultToggle" />
             <span>设为默认文件夹</span>
           </label>
 
@@ -871,7 +1002,7 @@ function formatHistoryTime(value: string) {
               <span>完成 {{ queueCompleted }} · 失败 {{ queueFailed }}</span>
             </div>
             <div class="queue-progress-track">
-              <div class="queue-progress-fill" :style="{ width: `${(queueCurrentIndex / queueTotal) * 100}%` }" />
+              <div class="queue-progress-fill" :style="{ width: `${queueProgressPercent}%` }" />
             </div>
             <div class="queue-status-title" :title="currentDownloadTitle">正在下载：{{ currentDownloadTitle }}</div>
           </div>
@@ -881,23 +1012,23 @@ function formatHistoryTime(value: string) {
               <span>{{ progressStatusText }}</span>
               <strong>{{ progressPercent.toFixed(1) }}%</strong>
             </div>
-            <div class="progress-track">
+            <div class="progress-track" role="progressbar" aria-label="下载进度" :aria-valuenow="progress.status === 'processing' ? undefined : progressPercent" :aria-valuetext="progressStatusText" :aria-valuemin="0" :aria-valuemax="100">
               <div class="progress-fill" :style="{ width: `${progressPercent}%` }" />
             </div>
-            <div class="progress-foot">
+            <div v-if="progress.status === 'downloading'" class="progress-foot">
               <span>速度 {{ progress.speed || '--' }}</span>
-              <span>ETA {{ progress.eta || '--' }}</span>
+              <span>剩余 {{ progress.eta || '--' }}</span>
               <span>大小 {{ progress.total || '--' }}</span>
             </div>
           </div>
 
           <div class="download-actions">
             <template v-if="video.isPlaylist">
-              <button v-if="!queueActive" class="button primary" type="button" :disabled="!saveDir || downloading" @click="handleBatchDownload">
+              <button v-if="!queueActive" class="button primary" type="button" :disabled="!canDownload || selectedCount === 0" @click="handleBatchDownload">
                 <span class="icon" aria-hidden="true" :style="iconStyle('download')" />
                 <span>下载 {{ video.entries?.filter(e => selectedEntries[e.url]).length || 0 }} 个视频</span>
               </button>
-              <button v-else class="button danger" type="button" @click="cancelQueue">
+              <button v-else class="button danger" type="button" :disabled="cancelling" @click="cancelQueue">
                 <span class="icon" aria-hidden="true" :style="iconStyle('xmark')" />
                 <span>取消</span>
               </button>
@@ -907,30 +1038,41 @@ function formatHistoryTime(value: string) {
                 <span class="icon" aria-hidden="true" :style="iconStyle('download')" />
                 <span>开始下载</span>
               </button>
-              <button v-if="downloading" class="button" type="button" @click="handleCancel">
+              <button v-if="downloading" class="button" type="button" :disabled="cancelling" @click="handleCancel">
                 <span class="icon" aria-hidden="true" :style="iconStyle('xmark')" />
-                <span>取消下载</span>
+                <span>{{ cancelling ? '正在取消…' : '取消下载' }}</span>
               </button>
             </template>
 
-            <template v-if="progress?.status === 'finished' && completedFilePath">
-              <button class="button primary" type="button" @click="openSubtitleWorkspace(completedFilePath)">
-                <span class="icon" aria-hidden="true" :style="iconStyle('mediaVideo')" />
-                <span>创建字幕</span>
+            <template v-if="!video.isPlaylist && progress?.status !== 'finished'">
+              <button class="button" type="button" title="提取视频页面提供的人工或自动字幕；没有时可下载视频后创建字幕" :disabled="!saveDir || downloading || extractingSubtitles" @click="handleExtractSubtitles">
+                <span class="icon" aria-hidden="true" :style="iconStyle('emptyPage')" />
+                <span>{{ extractingSubtitles ? '正在提取' : extractedSubtitlePath ? '重新提取站点字幕' : '提取站点字幕' }}</span>
               </button>
-              <button class="button icon-button" type="button" title="打开文件" aria-label="打开文件" @click="handleOpenFile">
+              <button v-if="extractedSubtitlePath" class="button icon-button" type="button" title="打开 Markdown 字幕" aria-label="打开 Markdown 字幕" @click="openPath(extractedSubtitlePath)">
                 <span class="icon" aria-hidden="true" :style="iconStyle('openNewWindow')" />
               </button>
-              <button class="button icon-button" type="button" title="打开文件夹" aria-label="打开文件夹" @click="handleOpenParentFolder">
+            </template>
+
+            <template v-if="!downloading && !queueActive && progress?.status === 'finished' && completedFilePath">
+              <button class="button primary" type="button" title="打开文件夹" aria-label="打开文件夹" @click="handleOpenParentFolder">
                 <span class="icon" aria-hidden="true" :style="iconStyle('folder')" />
+                <span>打开文件夹</span>
               </button>
+              <button class="button" type="button" @click="downloadNext">下载下一个</button>
+              <button class="button" type="button" @click="handleOpenFile">打开文件</button>
+              <details class="completion-more">
+                <summary>更多操作</summary>
+                <button class="button" type="button" :disabled="!canDownload" @click="handleDownload()">重新下载</button>
+                <button class="button" type="button" @click="openSubtitleWorkspace(completedFilePath)">创建字幕</button>
+              </details>
             </template>
           </div>
         </div>
       </section>
     </Transition>
 
-    <div v-if="errorMessage" class="error-box">
+    <div v-if="errorMessage" class="error-box" role="alert">
       <strong>{{ errorMessage }}</strong>
       <details>
         <summary>
@@ -942,19 +1084,17 @@ function formatHistoryTime(value: string) {
         </div>
       </details>
     </div>
-    <details v-if="logs.length" class="log-box">
+    <details v-if="logs.length" class="log-box" @toggle="logsOpen = ($event.target as HTMLDetailsElement).open">
       <summary>
         <span class="icon disclosure-icon" aria-hidden="true" :style="iconStyle('navArrowRight')" />
         <span>运行日志</span>
       </summary>
       <div class="details-content">
-        <pre>{{ logs.join('\n') }}</pre>
+        <pre v-if="logsOpen">{{ logs.join('\n') }}</pre>
       </div>
     </details>
     </div>
-    <div v-if="showInstallConfirm" class="modal-backdrop">
-      <section class="modal">
-        <h2>{{ installing ? '正在安装工具' : '安装缺失工具？' }}</h2>
+    <AppDialog :open="showInstallConfirm" :title="installing ? '正在安装工具' : '安装缺失工具？'" :busy="installing" @close="showInstallConfirm = false">
         <template v-if="!installing">
           <p class="modal-label">需要安装：</p>
           <ul>
@@ -979,8 +1119,7 @@ function formatHistoryTime(value: string) {
             <div class="progress-fill" :style="{ width: `${Math.max(...missingTools.map((tool) => installEvents[tool]?.percent || 0), 0)}%` }" />
           </div>
         </template>
-      </section>
-    </div>
+    </AppDialog>
 
     <div v-if="dragActive" class="drop-overlay">拖放链接到这里</div>
   </section>

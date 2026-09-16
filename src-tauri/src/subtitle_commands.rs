@@ -14,6 +14,7 @@ use uuid::Uuid;
 use crate::bing::BingTranslator;
 use crate::errors::AppError;
 use crate::gemini::{load_api_key, save_api_key, GeminiClient};
+use crate::glm;
 use crate::openai_compatible::{
     load_api_key as load_openai_key, save_api_key as save_openai_key, OpenAiCompatibleClient,
 };
@@ -100,6 +101,7 @@ pub fn get_gemini_settings(app: AppHandle) -> Result<GeminiSettings, AppError> {
     let mut settings = subtitle_store::read_settings(&app)?;
     settings.has_api_key = load_api_key().is_ok();
     settings.has_openai_api_key = load_openai_key().is_ok();
+    settings.has_glm_api_key = glm::load_api_key().is_ok();
     Ok(settings)
 }
 
@@ -128,7 +130,7 @@ pub fn save_gemini_settings(
     }
     if !matches!(
         request.processing_mode.as_str(),
-        "local_free" | "local_custom" | "gemini"
+        "local_free" | "local_custom" | "glm" | "gemini"
     ) {
         return Err(AppError::user(
             "不支持该字幕处理模式。",
@@ -153,7 +155,12 @@ pub fn save_gemini_settings(
     if let Some(value) = request.openai_api_key.as_deref() {
         save_openai_key(Some(value))?;
     }
-    crate::openai_compatible::validate_base_url(&request.openai_api_base)?;
+    if let Some(value) = request.glm_api_key.as_deref() {
+        glm::save_api_key(Some(value))?;
+    }
+    if request.processing_mode == "local_custom" {
+        crate::openai_compatible::validate_base_url(&request.openai_api_base)?;
+    }
     let settings = GeminiSettings {
         has_api_key: load_api_key().is_ok(),
         default_model: request.default_model,
@@ -166,6 +173,7 @@ pub fn save_gemini_settings(
         has_openai_api_key: load_openai_key().is_ok(),
         openai_api_base: request.openai_api_base.trim_end_matches('/').to_string(),
         openai_model: request.openai_model.trim().to_string(),
+        has_glm_api_key: glm::load_api_key().is_ok(),
     };
     subtitle_store::write_settings(&app, &settings)?;
     Ok(settings)
@@ -186,6 +194,23 @@ pub async fn test_openai_compatible_connection(app: AppHandle) -> Result<String,
     )?
     .test_connection()
     .await
+}
+
+#[tauri::command]
+pub async fn list_openai_compatible_models(
+    request: ListOpenAiCompatibleModelsRequest,
+) -> Result<Vec<String>, AppError> {
+    let api_key = request
+        .api_key
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| load_openai_key().ok());
+    crate::openai_compatible::list_models(&request.api_base, api_key.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn test_glm_connection() -> Result<String, AppError> {
+    glm::client()?.test_chat_connection().await?;
+    Ok("GLM-4.7-Flash 已连接。".into())
 }
 
 #[tauri::command]
@@ -517,7 +542,85 @@ pub async fn create_subtitle_project(
         translation_provider: None,
         artifacts: Vec::new(),
         performance: SubtitlePerformance::default(),
+        workspace: SubtitleProjectWorkspace::default(),
     };
+    subtitle_store::write_project(&app, &project)?;
+    Ok(project)
+}
+
+#[tauri::command]
+pub fn get_subtitle_project(
+    app: AppHandle,
+    project_id: String,
+) -> Result<SubtitleProject, AppError> {
+    subtitle_store::read_project(&app, &project_id)
+}
+
+fn validate_project_workspace(workspace: &SubtitleProjectWorkspace) -> Result<(), AppError> {
+    if !matches!(
+        workspace.review_status.as_str(),
+        "draft" | "reviewing" | "approved"
+    ) {
+        return Err(AppError::user(
+            "字幕项目校对状态无效。",
+            workspace.review_status.clone(),
+        ));
+    }
+    if !matches!(
+        workspace.export_content.as_str(),
+        "source" | "translated" | "bilingual"
+    ) {
+        return Err(AppError::user(
+            "字幕导出内容无效。",
+            workspace.export_content.clone(),
+        ));
+    }
+    if !matches!(
+        workspace.export_format.as_str(),
+        "srt" | "vtt" | "txt" | "md"
+    ) {
+        return Err(AppError::user(
+            "字幕导出格式无效。",
+            workspace.export_format.clone(),
+        ));
+    }
+    if workspace.style.font_family.trim().is_empty() || workspace.style.font_family.len() > 64 {
+        return Err(AppError::user(
+            "字幕字体无效。",
+            workspace.style.font_family.clone(),
+        ));
+    }
+    if !(8..=200).contains(&workspace.style.font_size)
+        || !(8..=200).contains(&workspace.style.translated_font_size)
+        || !matches!(
+            workspace.style.position.as_str(),
+            "top" | "middle" | "bottom"
+        )
+        || !(0.0..=16.0).contains(&workspace.style.outline_width)
+        || !(0.0..=16.0).contains(&workspace.style.shadow)
+    {
+        return Err(AppError::user(
+            "字幕样式参数无效。",
+            "Check font size, position, outline, and shadow values.",
+        ));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_subtitle_project_workspace(
+    app: AppHandle,
+    request: SaveSubtitleProjectWorkspaceRequest,
+) -> Result<SubtitleProject, AppError> {
+    validate_project_workspace(&request.workspace)?;
+    let mut project = subtitle_store::read_project(&app, &request.project_id)?;
+    let mut workspace = request.workspace;
+    workspace.output_dir = workspace.output_dir.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    });
+    project.workspace = workspace;
+    project.updated_at = subtitle_store::now_epoch();
     subtitle_store::write_project(&app, &project)?;
     Ok(project)
 }
@@ -1245,48 +1348,154 @@ pub async fn start_openai_compatible_translation(
     state: State<'_, SubtitleTaskState>,
     request: StartTextTaskRequest,
 ) -> Result<SubtitleProject, AppError> {
+    let settings = subtitle_store::read_settings(&app)?;
+    let client = OpenAiCompatibleClient::new(
+        &settings.openai_api_base,
+        load_openai_key()?,
+        &settings.openai_model,
+    )?;
+    run_openai_compatible_text_task(
+        app,
+        state,
+        request,
+        client,
+        "openai-compatible",
+        "自定义 AI",
+        false,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn start_glm_translation(
+    app: AppHandle,
+    state: State<'_, SubtitleTaskState>,
+    request: StartTextTaskRequest,
+) -> Result<SubtitleProject, AppError> {
+    run_openai_compatible_text_task(
+        app,
+        state,
+        request,
+        glm::client()?,
+        "glm-4.7-flash",
+        "GLM-4.7-Flash",
+        false,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn start_glm_polish(
+    app: AppHandle,
+    state: State<'_, SubtitleTaskState>,
+    request: StartTextTaskRequest,
+) -> Result<SubtitleProject, AppError> {
+    run_openai_compatible_text_task(
+        app,
+        state,
+        request,
+        glm::client()?,
+        "glm-4.7-flash",
+        "GLM-4.7-Flash",
+        true,
+    )
+    .await
+}
+
+async fn run_openai_compatible_text_task(
+    app: AppHandle,
+    state: State<'_, SubtitleTaskState>,
+    request: StartTextTaskRequest,
+    client: OpenAiCompatibleClient,
+    provider: &str,
+    provider_label: &str,
+    polish: bool,
+) -> Result<SubtitleProject, AppError> {
     let cancel = register_task(&state, &request.project_id)?;
     let result = async {
-        let settings = subtitle_store::read_settings(&app)?;
-        let client = OpenAiCompatibleClient::new(
-            &settings.openai_api_base,
-            load_openai_key()?,
-            &settings.openai_model,
-        )?;
         let mut project = subtitle_store::read_project(&app, &request.project_id)?;
         if project.segments.is_empty() {
-            return Err(AppError::user("项目还没有可翻译的字幕。", "No segments"));
+            return Err(AppError::user(
+                if polish {
+                    "项目还没有可校对的字幕。"
+                } else {
+                    "项目还没有可翻译的字幕。"
+                },
+                "No segments",
+            ));
         }
-        project.status = "translate".into();
+        let target_language = request
+            .target_language
+            .clone()
+            .unwrap_or_else(|| "zh-CN".into());
+        project.status = if polish { "polish" } else { "translate" }.into();
         project.last_error = None;
-        begin_stage(&mut project, "custom_ai_translation");
+        let stage_prefix = if provider == "glm-4.7-flash" {
+            "glm"
+        } else {
+            "custom_ai"
+        };
+        begin_stage(
+            &mut project,
+            &format!(
+                "{}_{}",
+                stage_prefix,
+                if polish { "polish" } else { "translation" }
+            ),
+        );
         subtitle_store::write_project(&app, &project)?;
         let project_id = project.id.clone();
-        client
-            .translate(
-                &mut project.segments,
-                "Simplified Chinese",
-                &cancel,
-                |batch, total| {
-                    emit(
-                        &app,
-                        SubtitleProgressEvent {
-                            project_id: project_id.clone(),
-                            stage: "translate".into(),
-                            percent: batch as f32 / total.max(1) as f32 * 100.0,
-                            chunk_index: Some(batch),
-                            chunk_total: Some(total),
-                            message: "正在使用自定义 AI 翻译…".into(),
-                            input_tokens: 0,
-                            output_tokens: 0,
-                            recoverable: true,
-                        },
-                    );
-                },
-            )
-            .await?;
-        project.target_language = Some("zh-CN".into());
-        project.translation_provider = Some("openai-compatible".into());
+        if polish {
+            client
+                .polish(
+                    &mut project.segments,
+                    &target_language,
+                    &cancel,
+                    |batch, total| {
+                        emit(
+                            &app,
+                            SubtitleProgressEvent {
+                                project_id: project_id.clone(),
+                                stage: "polish".into(),
+                                percent: batch as f32 / total.max(1) as f32 * 100.0,
+                                chunk_index: Some(batch),
+                                chunk_total: Some(total),
+                                message: format!("正在使用 {provider_label} 校对…"),
+                                input_tokens: 0,
+                                output_tokens: 0,
+                                recoverable: true,
+                            },
+                        );
+                    },
+                )
+                .await?;
+        } else {
+            client
+                .translate(
+                    &mut project.segments,
+                    &target_language,
+                    &cancel,
+                    |batch, total| {
+                        emit(
+                            &app,
+                            SubtitleProgressEvent {
+                                project_id: project_id.clone(),
+                                stage: "translate".into(),
+                                percent: batch as f32 / total.max(1) as f32 * 100.0,
+                                chunk_index: Some(batch),
+                                chunk_total: Some(total),
+                                message: format!("正在使用 {provider_label} 翻译…"),
+                                input_tokens: 0,
+                                output_tokens: 0,
+                                recoverable: true,
+                            },
+                        );
+                    },
+                )
+                .await?;
+            project.target_language = Some(target_language);
+        }
+        project.translation_provider = Some(provider.into());
         project.status = "ready".into();
         finish_stage(&mut project, "completed", None);
         project.updated_at = subtitle_store::now_epoch();

@@ -1,6 +1,8 @@
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -10,7 +12,10 @@ use tokio::task::JoinHandle;
 use crate::commands::DownloadRequest;
 use crate::errors::AppError;
 use crate::process_utils::hidden_command;
-use crate::progress::{parse_output_path, parse_progress_line, DownloadProgressEvent};
+use crate::progress::{
+    parse_download_plan_line, parse_output_path, parse_progress_line, DownloadProgressEvent,
+    DownloadProgressTracker,
+};
 use crate::tool_paths;
 use crate::ytdlp;
 
@@ -74,7 +79,6 @@ impl DownloadState {
         };
 
         let Some(child_id) = child_id else {
-            self.clear().await;
             return Ok(());
         };
 
@@ -113,20 +117,16 @@ pub async fn run_download(
     dir: PathBuf,
 ) -> Result<(), AppError> {
     state.reserve().await?;
-    let use_aria2 = hidden_command("aria2c")
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await
-        .is_ok_and(|status| status.success());
-
     let mut command = hidden_command(tool_paths::ytdlp());
+    let ffmpeg = tool_paths::ffmpeg();
+    if ffmpeg.is_file() {
+        command.arg("--ffmpeg-location").arg(ffmpeg);
+    }
     command
+        .kill_on_drop(true)
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
-        .args(ytdlp::download_args_with_accelerator(
+        .args(ytdlp::download_args(
             &request.mode,
             request.format_id.as_deref(),
             &dir.to_string_lossy(),
@@ -134,7 +134,6 @@ pub async fn run_download(
             &request
                 .options
                 .to_ytdlp_options(ytdlp::site_profile(request.url.trim())),
-            use_aria2,
         ))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -163,17 +162,20 @@ pub async fn run_download(
     };
 
     state.set_child_id(child_id).await;
-    emit(
-        &app,
-        DownloadProgressEvent::status(
-            "starting",
-            use_aria2.then_some("已启用 aria2 多连接下载。".into()),
-        ),
-    );
+    let cancel_requested = state.inner.lock().await.cancel_requested;
+    if cancel_requested {
+        if let Err(error) = state.cancel_current().await {
+            let _ = child.kill().await;
+            state.finish(Some(child_id)).await;
+            return Err(error);
+        }
+    }
+    emit(&app, DownloadProgressEvent::status("starting", None));
 
-    let log_lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let log_lines = Arc::new(Mutex::new(VecDeque::<String>::new()));
     let output_path = Arc::new(Mutex::new(None::<String>));
     let last_progress = Arc::new(Mutex::new(None::<DownloadProgressEvent>));
+    let progress_tracker = Arc::new(Mutex::new(DownloadProgressTracker::default()));
     let mut readers = Vec::new();
     if let Some(stdout) = child.stdout.take() {
         readers.push(spawn_line_reader(
@@ -182,6 +184,7 @@ pub async fn run_download(
             log_lines.clone(),
             output_path.clone(),
             last_progress.clone(),
+            progress_tracker.clone(),
         ));
     }
     if let Some(stderr) = child.stderr.take() {
@@ -191,17 +194,36 @@ pub async fn run_download(
             log_lines.clone(),
             output_path.clone(),
             last_progress.clone(),
+            progress_tracker.clone(),
         ));
     }
 
-    let status = child.wait().await?;
+    let status = match child.wait().await {
+        Ok(status) => status,
+        Err(error) => {
+            let _ = child.kill().await;
+            state.finish(Some(child_id)).await;
+            for reader in readers {
+                reader.abort();
+            }
+            emit(
+                &app,
+                DownloadProgressEvent::status("error", Some(error.to_string())),
+            );
+            return Err(error.into());
+        }
+    };
     let was_cancelled = state.finish(Some(child_id)).await;
     for reader in readers {
         let _ = reader.await;
     }
     let detail = {
         let lines = log_lines.lock().await;
-        lines.join("\n")
+        lines
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join("\n")
     };
     let final_file_path = {
         let path = output_path.lock().await;
@@ -260,35 +282,52 @@ pub async fn run_download(
 fn spawn_line_reader<R>(
     app: AppHandle,
     reader: R,
-    log_lines: Arc<Mutex<Vec<String>>>,
+    log_lines: Arc<Mutex<VecDeque<String>>>,
     output_path: Arc<Mutex<Option<String>>>,
     last_progress: Arc<Mutex<Option<DownloadProgressEvent>>>,
+    progress_tracker: Arc<Mutex<DownloadProgressTracker>>,
 ) -> JoinHandle<()>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
         let mut lines = BufReader::new(reader).lines();
+        let mut last_emit: Option<Instant> = None;
         while let Ok(Some(line)) = lines.next_line().await {
+            if line.trim().starts_with(ytdlp::PROGRESS_PLAN_PREFIX) {
+                if let Some(plan) = parse_download_plan_line(&line) {
+                    progress_tracker.lock().await.set_plan(plan);
+                }
+                continue;
+            }
             {
                 let mut logs = log_lines.lock().await;
-                logs.push(line.clone());
+                logs.push_back(line.clone());
+                if logs.len() > 1000 {
+                    logs.pop_front();
+                }
             }
             if let Some(path) = parse_output_path(&line) {
                 let mut output = output_path.lock().await;
                 *output = Some(path);
             }
-            if let Some(event) = parse_progress_line(&line) {
+            if let Some(mut event) = parse_progress_line(&line) {
+                progress_tracker.lock().await.apply(&mut event);
                 if event.percent.is_some() || event.total.is_some() || event.speed.is_some() {
                     let mut progress = last_progress.lock().await;
                     *progress = Some(event.clone());
                 }
-                emit(&app, event);
+                if event.status != "downloading"
+                    || last_emit.is_none_or(|time| time.elapsed() >= Duration::from_millis(200))
+                {
+                    last_emit = Some(Instant::now());
+                    emit(&app, event);
+                }
             } else {
                 emit(
                     &app,
                     DownloadProgressEvent {
-                        status: "processing".to_string(),
+                        status: "log".to_string(),
                         percent: None,
                         total: None,
                         speed: None,
@@ -305,4 +344,20 @@ where
 
 fn emit(app: &AppHandle, event: DownloadProgressEvent) {
     let _ = app.emit("download://progress", event);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cancellation_before_spawn_keeps_slot_reserved() {
+        let state = DownloadState::default();
+        state.reserve().await.unwrap();
+        state.cancel_current().await.unwrap();
+        assert!(state.reserve().await.is_err());
+        state.set_child_id(42).await;
+        assert!(state.finish(Some(42)).await);
+        assert!(state.reserve().await.is_ok());
+    }
 }

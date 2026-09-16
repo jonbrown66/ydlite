@@ -1,0 +1,113 @@
+// Run against `npm run dev -- --mode tauri` with PLAYWRIGHT_MODULE pointing to Playwright.
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+(async () => {
+  const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1180, height: 780 }, reducedMotion: 'reduce' });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(() => localStorage.setItem('ydlite.defaultDir', 'C:/test-downloads'));
+    await page.route(/\/src\/main-app\.ts(?:\?[^?]*)?$/, route => route.request().url().includes('regression-real') ? route.continue() : route.fulfill({ contentType: 'application/javascript', body: `
+      import { mockIPC, mockWindows } from '/node_modules/@tauri-apps/api/mocks.js';
+      import { emit } from '/node_modules/@tauri-apps/api/event.js';
+      let finishDownload;
+      window.testEmit = async (name, payload) => { await emit(name, payload); if (['finished','cancelled','error'].includes(payload.status)) { finishDownload?.(); finishDownload = undefined; } };
+      window.destroyCount = 0;
+      const settings = { hasApiKey: false, defaultModel: 'test', defaultTargetLanguage: 'zh-CN', maxCostUsd: 2, maxConcurrency: 2, processingMode: 'local_free', whisperModel: 'test', whisperRuntime: 'cpu', hasOpenaiApiKey: false, openaiApiBase: 'https://example.com/v1', openaiModel: 'test', hasGlmApiKey: false };
+      mockWindows('main');
+      mockIPC((cmd, args) => {
+        if (cmd === 'start_download') return new Promise(resolve => { finishDownload = resolve; });
+        if (cmd === 'plugin:window|close') return emit('tauri://close-requested');
+        if (cmd === 'plugin:window|destroy') { window.destroyCount++; return; }
+        if (cmd === 'check_dependencies') return { ytdlp_ok: true, ffmpeg_ok: true, ytdlp_path: 'yt-dlp', ffmpeg_path: 'ffmpeg', ytdlp_update_available: false };
+        if (cmd === 'get_gemini_settings') return {...settings};
+        if (cmd === 'save_gemini_settings') return Object.assign(settings, args.request);
+        if (cmd.startsWith('list_')) return [];
+        if (cmd === 'get_cache_status') return { cacheBytes: 0, modelBytes: 0, projectBytes: 0, records: [] };
+        if (cmd === 'parse_video') return { title: 'Sample video · A long title for layout verification', uploader: 'Example creator', duration: 124, originalUrl: args.request.url, resolvedUrl: args.request.url, site: 'example', parseStrategy: 'default', formats: [{formatId: '720', ext: 'mp4', height: 720, vcodec: 'h264', acodec: 'aac'}] };
+        if (cmd === 'get_tools_directory') return 'C:/tools';
+        return false;
+      }, { shouldMockEvents: true });
+      await import('/src/main-app.ts?regression-real');
+    ` }));
+    await page.goto('http://localhost:1420');
+    const close = page.getByRole('button', { name: '关闭窗口', exact: true });
+    await close.waitFor();
+    await close.hover();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.close-window')).backgroundColor === 'rgb(196, 43, 28)');
+    assert.equal(await close.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(196, 43, 28)');
+    assert.equal(await close.evaluate(el => getComputedStyle(el).color), 'rgb(255, 255, 255)');
+    await page.mouse.down();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.close-window')).backgroundColor === 'rgb(169, 35, 22)');
+    assert.equal(await close.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(169, 35, 22)');
+    await page.mouse.move(400, 300);
+    await page.mouse.up();
+    await page.getByRole('textbox', { name: '视频或音频链接' }).fill('https://example.com/video');
+    await page.getByRole('button', { name: '解析视频', exact: true }).click();
+    await page.getByRole('heading', { name: /Sample video/ }).waitFor();
+    const combo = page.getByRole('combobox').first();
+    await combo.click();
+    await page.getByRole('listbox').waitFor();
+    assert.equal(await combo.evaluate(el => document.activeElement === el), true);
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await page.getByRole('listbox').waitFor({state:'hidden'});
+    fs.mkdirSync('artifacts/frontend', {recursive:true});
+    await page.screenshot({path:'artifacts/frontend/download.png'});
+    await page.getByRole('button', {name:'开始下载',exact:true}).click();
+    await page.getByRole('button', {name:'取消下载',exact:true}).click();
+    assert.equal(await page.getByRole('button',{name:'正在取消…',exact:true}).isDisabled(), true);
+    await page.evaluate(() => window.testEmit('download://progress', {status:'cancelled'}));
+    await page.getByRole('button', {name:'开始下载',exact:true}).waitFor();
+    await page.getByRole('button', {name:'开始下载',exact:true}).click();
+    await page.evaluate(() => window.testEmit('download://progress', {status:'finished',filePath:'C:/test-downloads/first.mp4'}));
+    await page.getByRole('button',{name:'下载下一个',exact:true}).waitFor();
+    await page.getByRole('link',{name:'任务记录',exact:true}).click();
+    await page.getByRole('button',{name:'删除下载记录',exact:true}).click();
+    await page.getByRole('button',{name:'删除记录',exact:true}).click();
+    await page.getByRole('link',{name:'视频下载',exact:true}).click();
+    await page.getByRole('button',{name:'下载下一个',exact:true}).click();
+    await page.getByRole('textbox',{name:'视频或音频链接'}).fill('https://example.com/second');
+    await page.getByRole('button',{name:'解析视频',exact:true}).click();
+    await page.getByRole('button',{name:'开始下载',exact:true}).click();
+    await page.evaluate(() => window.testEmit('download://progress', {status:'finished',filePath:'C:/test-downloads/second.mp4'}));
+    await page.getByRole('button',{name:'下载下一个',exact:true}).waitFor();
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('ydlite.history')).map(item=>item.filePath)), ['C:/test-downloads/second.mp4']);
+    await page.getByRole('link', {name:'设置',exact:true}).click();
+    await page.locator('.settings-actions').waitFor();
+    await page.getByText('设置已保存', {exact:true}).waitFor();
+    await page.locator('input[value="local_custom"]').check();
+    await page.getByRole('link', {name:'视频下载',exact:true}).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.waitFor();
+    assert.equal(await page.locator('#app').evaluate(el => el.inert), true);
+    await page.keyboard.press('Tab');
+    assert.equal(await dialog.evaluate(el => el.contains(document.activeElement)), true);
+    await page.getByRole('button',{name:'放弃修改',exact:true}).click();
+    await dialog.waitFor({state:'hidden'});
+    await page.getByRole('link', {name:'设置',exact:true}).click();
+    assert.equal(await page.locator('input[value="local_free"]').isChecked(), true);
+    await page.locator('input[value="local_custom"]').check();
+    await close.click();
+    await dialog.waitFor();
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({state:'hidden'});
+    assert.equal(await page.evaluate(() => window.destroyCount), 0);
+    for (const width of [1180, 900, 800, 720]) {
+      await page.setViewportSize({width,height:560});
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'horizontal overflow at '+width);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true, 'body overflow at '+width);
+      assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.app-titlebar')).gridTemplateColumns.split(' ')[0] === getComputedStyle(document.querySelector('.app-body')).gridTemplateColumns.split(' ')[0]), true);
+    }
+    await page.screenshot({path:'artifacts/frontend/settings-small.png'});
+    await close.click();
+    await dialog.waitFor();
+    await page.getByRole('button',{name:'放弃修改',exact:true}).click();
+    await page.waitForFunction(() => window.destroyCount === 1);
+    assert.deepEqual(errors, []);
+    console.log('PASS: close hover/pressed colors; dropdown keyboard; cancellation waits for terminal event; deleted history stays deleted; discard restores settings; dialog focus; close cancel/confirm; layout at 4 sizes; no runtime errors.');
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

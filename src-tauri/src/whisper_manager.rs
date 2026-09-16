@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use futures_util::StreamExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::AsyncWriteExt;
 
@@ -10,6 +10,13 @@ use crate::errors::AppError;
 use crate::subtitle_types::{WhisperModelInfo, WhisperRuntimeInfo};
 
 const WHISPER_VERSION: &str = "1.9.1";
+const WHISPER_ROOT_CONFIG_FILE: &str = "whisper-root.json";
+const WHISPER_ROOT_ENV: &str = "YDLITE_WHISPER_DIR";
+
+#[derive(Deserialize)]
+struct WhisperRootConfig {
+    root: PathBuf,
+}
 
 struct ModelSpec {
     id: &'static str,
@@ -81,11 +88,52 @@ pub struct WhisperDownloadEvent {
     pub message: String,
 }
 
-fn root(app: &AppHandle) -> Result<PathBuf, AppError> {
+fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     app.path()
         .app_local_data_dir()
-        .map(|path| path.join("whisper"))
         .map_err(|error| AppError::user("无法定位本地模型目录。", error.to_string()))
+}
+
+fn validate_external_root(path: PathBuf, source: &str) -> Result<PathBuf, AppError> {
+    if path.as_os_str().is_empty() || !path.is_absolute() {
+        return Err(AppError::user(
+            "Whisper 外部目录配置无效。",
+            format!("{source} 必须是非空绝对路径。"),
+        ));
+    }
+    Ok(path)
+}
+
+fn configured_root(config_path: &Path) -> Result<Option<PathBuf>, AppError> {
+    let contents = match fs::read_to_string(config_path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(AppError::user(
+                "无法读取 Whisper 外部目录配置。",
+                format!("{}: {error}", config_path.display()),
+            ));
+        }
+    };
+    let config: WhisperRootConfig = serde_json::from_str(&contents).map_err(|error| {
+        AppError::user(
+            "Whisper 外部目录配置无效。",
+            format!("{}: {error}", config_path.display()),
+        )
+    })?;
+    validate_external_root(config.root, &config_path.display().to_string()).map(Some)
+}
+
+fn root(app: &AppHandle) -> Result<PathBuf, AppError> {
+    if let Some(value) = std::env::var_os(WHISPER_ROOT_ENV) {
+        return validate_external_root(PathBuf::from(value), WHISPER_ROOT_ENV);
+    }
+
+    let app_data_dir = app_data_dir(app)?;
+    if let Some(path) = configured_root(&app_data_dir.join(WHISPER_ROOT_CONFIG_FILE))? {
+        return Ok(path);
+    }
+    Ok(app_data_dir.join("whisper"))
 }
 
 fn model_spec(id: &str) -> Result<&'static ModelSpec, AppError> {

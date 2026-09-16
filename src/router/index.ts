@@ -18,7 +18,7 @@ const router = createRouter({
       path: '/subtitles',
       name: 'subtitles',
       component: () => import('@/pages/SubtitlePage.vue'),
-      meta: { title: '转录翻译', eyebrow: 'SUBTITLES' },
+      meta: { title: '自动字幕', eyebrow: 'SUBTITLES' },
     },
     {
       path: '/tasks',

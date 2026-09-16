@@ -16,13 +16,13 @@
 }
 
 :root {
-  --app-background: oklch(0.965 0.008 245);
-  --app-foreground: oklch(0.25 0.018 245);
-  --app-surface: oklch(0.988 0.004 245);
-  --app-muted: oklch(0.953 0.012 245);
-  --app-muted-foreground: oklch(0.48 0.018 245);
-  --app-border: oklch(0.86 0.014 245);
-  --app-primary: oklch(0.49 0.105 247);
-  --app-primary-foreground: oklch(0.988 0.004 245);
-  --app-danger: oklch(0.53 0.16 28);
+  --app-background: oklch(0.978 0.002 260);
+  --app-foreground: oklch(0.205 0.007 260);
+  --app-surface: oklch(1 0 0);
+  --app-muted: oklch(0.946 0.004 260);
+  --app-muted-foreground: oklch(0.435 0.009 260);
+  --app-border: oklch(0.892 0.004 260);
+  --app-primary: #2e59a7;
+  --app-primary-foreground: oklch(1 0 0);
+  --app-danger: oklch(0.54 0.175 27);
 }

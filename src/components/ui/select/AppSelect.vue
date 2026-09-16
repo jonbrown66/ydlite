@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref, useId, watch } from 'vue'
 import checkIcon from 'iconoir/icons/check.svg?url'
 import chevronIcon from 'iconoir/icons/nav-arrow-down.svg?url'
 
@@ -23,10 +23,12 @@ const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
 const menu = ref<HTMLElement | null>(null)
 const open = ref(false)
+const selectId = useId()
+const menuStyle = ref<Record<string, string>>({})
 const activeIndex = ref(0)
 const selectedIndex = computed(() => {
   const index = props.options.findIndex(option => option.value === props.modelValue)
-  return index < 0 ? 0 : index
+  return index
 })
 const selectedLabel = computed(() =>
   props.options[selectedIndex.value]?.label ?? '请选择',
@@ -37,15 +39,34 @@ function iconStyle(url: string) {
 }
 
 function show() {
-  if (props.disabled) return
-  activeIndex.value = selectedIndex.value
+  if (props.disabled || !props.options.length) return
+  activeIndex.value = Math.max(0, selectedIndex.value)
   open.value = true
+  positionMenu()
   scrollActiveOption()
 }
 
 function close(restoreFocus = false) {
   open.value = false
   if (restoreFocus) void nextTick(() => trigger.value?.focus())
+}
+
+function positionMenu() {
+  const rect = trigger.value?.getBoundingClientRect()
+  if (!rect || !open.value) return
+  const below = window.innerHeight - rect.bottom - 12
+  const above = rect.top - 12
+  const upward = below < 248 && above > below
+  menuStyle.value = {
+    left: `${Math.max(8, rect.left)}px`,
+    width: `${Math.min(rect.width, window.innerWidth - 16)}px`,
+    maxHeight: `${Math.max(0, Math.min(248, upward ? above : below))}px`,
+    ...(upward ? { bottom: `${window.innerHeight - rect.top + 6}px` } : { top: `${rect.bottom + 6}px` }),
+  }
+}
+
+function onScroll(event: Event) {
+  if (!menu.value?.contains(event.target as Node)) close()
 }
 
 function toggle() {
@@ -106,11 +127,22 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 function onPointerDown(event: PointerEvent) {
-  if (!root.value?.contains(event.target as Node)) close()
+  if (!root.value?.contains(event.target as Node) && !menu.value?.contains(event.target as Node)) close()
 }
 
-onMounted(() => document.addEventListener('pointerdown', onPointerDown))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown))
+watch(() => props.disabled, value => { if (value) close() })
+watch(() => props.options, () => close())
+onDeactivated(() => close())
+onMounted(() => {
+  document.addEventListener('pointerdown', onPointerDown)
+  document.addEventListener('scroll', onScroll, true)
+  window.addEventListener('resize', positionMenu)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onPointerDown)
+  document.removeEventListener('scroll', onScroll, true)
+  window.removeEventListener('resize', positionMenu)
+})
 </script>
 
 <template>
@@ -122,8 +154,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
       :disabled="disabled"
       :aria-label="ariaLabel"
       aria-haspopup="listbox"
+      role="combobox"
+      :aria-controls="open ? `${selectId}-menu` : undefined"
       :aria-expanded="open"
-      :aria-activedescendant="open ? `select-option-${activeIndex}` : undefined"
+      :aria-activedescendant="open ? `${selectId}-option-${activeIndex}` : undefined"
       @click="toggle"
       @keydown="onKeydown"
     >
@@ -131,16 +165,19 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
       <i class="select-chevron" :style="iconStyle(chevronIcon)" />
     </button>
 
+    <Teleport to="body">
     <Transition name="select-pop">
-      <div v-if="open" ref="menu" class="app-select-menu" role="listbox" :aria-label="ariaLabel">
+      <div v-if="open" :id="`${selectId}-menu`" ref="menu" class="app-select-menu" :style="menuStyle" role="listbox" :aria-label="ariaLabel">
         <button
           v-for="(option, index) in options"
-          :id="`select-option-${index}`"
+          :id="`${selectId}-option-${index}`"
           :key="option.value"
           class="app-select-option"
           :class="{ selected: option.value === modelValue, active: index === activeIndex }"
           type="button"
           role="option"
+          tabindex="-1"
+          @mousedown.prevent
           :aria-selected="option.value === modelValue"
           @mouseenter="activeIndex = index"
           @click="choose(option)"
@@ -150,6 +187,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
         </button>
       </div>
     </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -166,15 +204,15 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  height: 42px;
-  padding: 0 11px 0 13px;
+  height: 40px;
+  padding: 0 10px 0 12px;
   border: 1px solid var(--workspace-border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   outline: 0;
   background: var(--workspace-surface);
   color: var(--workspace-ink);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 620;
   text-align: left;
   cursor: pointer;
   transition: border-color 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out;
@@ -189,7 +227,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 .app-select-trigger:focus-visible {
   border-color: var(--workspace-accent);
   background: var(--workspace-surface);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--workspace-accent) 14%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--workspace-accent) 16%, transparent);
 }
 
 .app-select-trigger:disabled {
@@ -218,14 +256,11 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 }
 
 .app-select-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  left: 0;
-  z-index: 40;
+  position: fixed;
+  z-index: 500;
   display: grid;
   gap: 2px;
-  padding: 5px;
+  padding: 6px;
   max-height: min(248px, calc(100vh - 96px));
   overflow-x: hidden;
   overflow-y: auto;
@@ -233,7 +268,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   scrollbar-color: var(--workspace-border-strong) transparent;
   scrollbar-width: thin;
   border: 1px solid var(--workspace-border);
-  border-radius: 9px;
+  border-radius: var(--radius-panel);
   background: var(--workspace-surface);
   box-shadow: var(--workspace-shadow);
 }

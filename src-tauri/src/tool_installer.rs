@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{Cursor, Read, Write};
+use std::io::Write;
 use std::path::Path;
 
 use futures_util::StreamExt;
@@ -44,7 +44,12 @@ pub async fn install_missing_tools(app: AppHandle) -> Result<(), AppError> {
         let archive = tool_paths::tools_dir().join("ffmpeg.zip");
         download_file(&app, "ffmpeg", FFMPEG_URL, &archive).await?;
         emit(&app, "ffmpeg", "extracting", None, "正在解压 ffmpeg");
-        extract_ffmpeg(&archive, &tool_paths::ffmpeg_install_path())?;
+        let archive_copy = archive.clone();
+        tokio::task::spawn_blocking(move || {
+            extract_ffmpeg(&archive_copy, &tool_paths::ffmpeg_install_path())
+        })
+        .await
+        .map_err(|error| AppError::user("ffmpeg 解压失败。", error.to_string()))??;
         let _ = fs::remove_file(&archive);
         emit(&app, "ffmpeg", "installed", Some(100.0), "ffmpeg 安装完成");
     } else {
@@ -63,15 +68,22 @@ pub async fn update_ytdlp(app: AppHandle) -> Result<(), AppError> {
 }
 
 async fn command_available(program: std::path::PathBuf, version_arg: &str) -> bool {
-    hidden_command(program)
-        .arg(version_arg)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map(|status| status.success())
-        .unwrap_or(false)
+    let mut command = hidden_command(program);
+    command.kill_on_drop(true);
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        command
+            .arg(version_arg)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status(),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .map(|status| status.success())
+    .unwrap_or(false)
 }
 
 async fn download_file(
@@ -98,7 +110,16 @@ async fn download_file(
 
     let total = response.content_length();
     let mut downloaded = 0_u64;
-    let mut file = File::create(destination)?;
+    let staging = destination.with_file_name(format!(
+        "{}.{}.exe",
+        destination
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy(),
+        uuid::Uuid::new_v4()
+    ));
+    let _cleanup = TemporaryDownload(staging.clone());
+    let mut file = File::create(&staging)?;
     let mut stream = response.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
@@ -115,14 +136,33 @@ async fn download_file(
         }
     }
 
+    file.sync_all()?;
+    drop(file);
+    if downloaded == 0 || total.is_some_and(|total| total != downloaded) {
+        return Err(AppError::user(
+            "工具下载不完整，请重试。",
+            "Download size mismatch",
+        ));
+    }
+    if tool == "yt-dlp" && !command_available(staging.clone(), "--version").await {
+        return Err(AppError::user(
+            "下载的 yt-dlp 无法运行，已保留原版本。",
+            "Downloaded tool validation failed",
+        ));
+    }
+    fs::rename(&staging, destination)?;
     Ok(())
 }
 
+struct TemporaryDownload(std::path::PathBuf);
+impl Drop for TemporaryDownload {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
 fn extract_ffmpeg(archive: &Path, destination: &Path) -> Result<(), AppError> {
-    let mut bytes = Vec::new();
-    File::open(archive)?.read_to_end(&mut bytes)?;
-    let cursor = Cursor::new(bytes);
-    let mut zip = zip::ZipArchive::new(cursor)
+    let mut zip = zip::ZipArchive::new(File::open(archive)?)
         .map_err(|error| AppError::user("ffmpeg 解压失败。", error.to_string()))?;
 
     let mut found_ffmpeg = false;
@@ -176,4 +216,27 @@ fn emit(
             message: Some(message.into()),
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn staging_cleanup_preserves_old_tool_and_rename_replaces_it() {
+        let dir = std::env::temp_dir().join(format!("ydlite-update-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
+        let destination = dir.join("tool.exe");
+        let staging = dir.join("staging.exe");
+        fs::write(&destination, "old").unwrap();
+        {
+            let _cleanup = TemporaryDownload(staging.clone());
+            fs::write(&staging, "partial").unwrap();
+        }
+        assert!(!staging.exists());
+        assert_eq!(fs::read_to_string(&destination).unwrap(), "old");
+        fs::write(&staging, "new").unwrap();
+        fs::rename(&staging, &destination).unwrap();
+        assert_eq!(fs::read_to_string(&destination).unwrap(), "new");
+        fs::remove_dir_all(dir).unwrap();
+    }
 }

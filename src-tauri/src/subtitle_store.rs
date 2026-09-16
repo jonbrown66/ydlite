@@ -48,13 +48,20 @@ fn project_file(app: &AppHandle, project_id: &str) -> Result<PathBuf, AppError> 
 
 pub fn read_project(app: &AppHandle, project_id: &str) -> Result<SubtitleProject, AppError> {
     let path = project_file(app, project_id)?;
-    let bytes = fs::read(&path).map_err(|error| {
-        AppError::user(
-            "字幕项目不存在或无法读取。",
-            format!("{}: {error}", path.display()),
-        )
-    })?;
-    serde_json::from_slice(&bytes).map_err(AppError::from)
+    read_json_with_backup(&path)
+}
+
+fn read_json_with_backup<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, AppError> {
+    match fs::read(path)
+        .map_err(AppError::from)
+        .and_then(|bytes| serde_json::from_slice(&bytes).map_err(AppError::from))
+    {
+        Ok(value) => Ok(value),
+        Err(original) => fs::read(path.with_file_name("project.previous.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .ok_or(original),
+    }
 }
 
 pub fn write_project(app: &AppHandle, project: &SubtitleProject) -> Result<(), AppError> {
@@ -65,9 +72,12 @@ pub fn write_project(app: &AppHandle, project: &SubtitleProject) -> Result<(), A
     let backup = dir.join("project.previous.json");
     let bytes = serde_json::to_vec_pretty(project)?;
     fs::write(&tmp, bytes)?;
-    if path.is_file() {
-        let _ = fs::copy(&path, &backup);
-        fs::remove_file(&path)?;
+    if fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<SubtitleProject>(&bytes).ok())
+        .is_some()
+    {
+        fs::copy(&path, &backup)?;
     }
     fs::rename(&tmp, &path)?;
     Ok(())
@@ -85,10 +95,8 @@ pub fn list_projects(app: &AppHandle) -> Result<Vec<SubtitleProject>, AppError> 
             continue;
         }
         let path = entry.path().join("project.json");
-        if let Ok(bytes) = fs::read(&path) {
-            if let Ok(project) = serde_json::from_slice::<SubtitleProject>(&bytes) {
-                projects.push(project);
-            }
+        if let Ok(project) = read_json_with_backup::<SubtitleProject>(&path) {
+            projects.push(project);
         }
     }
     projects.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
@@ -138,9 +146,6 @@ pub fn write_settings(app: &AppHandle, settings: &GeminiSettings) -> Result<(), 
     let path = dir.join(SETTINGS_FILE);
     let tmp = dir.join(format!("{SETTINGS_FILE}.tmp"));
     fs::write(&tmp, serde_json::to_vec_pretty(settings)?)?;
-    if path.is_file() {
-        fs::remove_file(&path)?;
-    }
     fs::rename(tmp, path)?;
     Ok(())
 }
@@ -242,5 +247,32 @@ mod tests {
     fn rejects_project_path_traversal() {
         assert!(validate_project_id("..\\subtitle-projects").is_err());
         assert!(validate_project_id("bd4ba448-9390-4e53-9cb1-177b2e261473").is_ok());
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+    #[test]
+    fn recovers_missing_or_invalid_project_from_backup() {
+        let dir = std::env::temp_dir().join(format!("ydlite-recovery-{}", Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
+        let path = dir.join("project.json");
+        fs::write(dir.join("project.previous.json"), br#"{"value":1}"#).unwrap();
+        assert_eq!(
+            read_json_with_backup::<serde_json::Value>(&path).unwrap()["value"],
+            1
+        );
+        fs::write(&path, "broken").unwrap();
+        assert_eq!(
+            read_json_with_backup::<serde_json::Value>(&path).unwrap()["value"],
+            1
+        );
+        fs::write(&path, br#"{"value":2}"#).unwrap();
+        assert_eq!(
+            read_json_with_backup::<serde_json::Value>(&path).unwrap()["value"],
+            2
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
 }

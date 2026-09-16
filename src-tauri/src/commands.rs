@@ -319,6 +319,17 @@ fn remove_tracking_params(url: &mut Url) {
 
 #[tauri::command]
 pub async fn parse_video(request: ParseVideoRequest) -> Result<VideoInfo, AppError> {
+    tokio::time::timeout(Duration::from_secs(90), parse_video_inner(request))
+        .await
+        .map_err(|_| {
+            AppError::user(
+                "解析超时，请重试或检查登录设置。",
+                "Parse exceeded 90 seconds",
+            )
+        })?
+}
+
+async fn parse_video_inner(request: ParseVideoRequest) -> Result<VideoInfo, AppError> {
     let original_url = validate_url(&request.url)?.to_string();
 
     let resolved_url = resolve_redirects(&original_url)
@@ -329,12 +340,6 @@ pub async fn parse_video(request: ParseVideoRequest) -> Result<VideoInfo, AppErr
 
     let mut attempts = Vec::new();
     let mut attempts_queue = Vec::new();
-
-    let browsers = [
-        (BrowserCookieSource::Chrome, "chrome"),
-        (BrowserCookieSource::Edge, "edge"),
-        (BrowserCookieSource::Firefox, "firefox"),
-    ];
 
     if !matches!(request.options.cookie_source, CookieSource::None) {
         attempts_queue.push((
@@ -362,25 +367,6 @@ pub async fn parse_video(request: ParseVideoRequest) -> Result<VideoInfo, AppErr
             CookieSource::None,
             "original URL + no cookies".to_string(),
         ));
-    }
-
-    for (browser_enum, browser_name) in browsers {
-        attempts_queue.push((
-            cleaned_url.clone(),
-            CookieSource::Browser {
-                browser: browser_enum.clone(),
-            },
-            format!("clean URL + {} cookies", browser_name),
-        ));
-        if cleaned_url != original_url {
-            attempts_queue.push((
-                original_url.clone(),
-                CookieSource::Browser {
-                    browser: browser_enum.clone(),
-                },
-                format!("original URL + {} cookies", browser_name),
-            ));
-        }
     }
 
     for (candidate_url, cookie_src, strategy) in attempts_queue {
@@ -449,13 +435,20 @@ async fn run_parse_attempt(
     flat_playlist: bool,
 ) -> Result<serde_json::Value, ParseAttempt> {
     let ytdlp_options = options.to_ytdlp_options(site);
-    let output = hidden_command(tool_paths::ytdlp())
+    let mut command = hidden_command(tool_paths::ytdlp());
+    command
+        .kill_on_drop(true)
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
         .args(ytdlp::parse_args(url, flat_playlist, &ytdlp_options))
-        .stdin(Stdio::null())
-        .output()
+        .stdin(Stdio::null());
+    let output = tokio::time::timeout(Duration::from_secs(30), command.output())
         .await
+        .map_err(|_| ParseAttempt {
+            strategy: strategy.to_string(),
+            url: url.to_string(),
+            stderr: "Parse attempt timed out after 30 seconds".into(),
+        })?
         .map_err(|error| ParseAttempt {
             strategy: strategy.to_string(),
             url: url.to_string(),
@@ -789,7 +782,7 @@ async fn command_version(program: PathBuf, arg: &str) -> Option<String> {
     text.lines().next().map(|line| line.trim().to_string())
 }
 
-fn validate_url(url: &str) -> Result<&str, AppError> {
+pub(crate) fn validate_url(url: &str) -> Result<&str, AppError> {
     let clean = url.trim();
     if clean.is_empty() {
         return Err(AppError::user("请输入视频链接。", "URL is empty"));

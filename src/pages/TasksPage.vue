@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onActivated, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import folderIcon from 'iconoir/icons/folder.svg?url'
 import mediaVideoIcon from 'iconoir/icons/media-video.svg?url'
@@ -14,6 +14,12 @@ import type { SubtitleProject } from '@/types'
 const tasks = useTasksStore()
 const router = useRouter()
 const pendingDelete = ref('')
+const fileError = ref('')
+async function openFile(path: string, folder = false) {
+  fileError.value = ''
+  try { if (folder) await openParentFolder(path); else await openPath(path) }
+  catch { fileError.value = '文件可能已移动或删除，请检查原保存位置。' }
+}
 const pendingClear = ref<'' | 'subtitles' | 'downloads'>('')
 
 function iconStyle(url: string) {
@@ -60,6 +66,10 @@ function projectStatus(project: SubtitleProject) {
   return ''
 }
 
+function openProject(project: SubtitleProject) {
+  void router.push({ name: 'subtitles', query: { project: project.id } })
+}
+
 async function removeProject(id: string) {
   if (await tasks.removeSubtitleProject(id)) pendingDelete.value = ''
 }
@@ -78,7 +88,7 @@ function clearDownloads() {
   pendingClear.value = ''
 }
 
-onMounted(() => void tasks.refresh())
+onActivated(() => void tasks.refresh())
 </script>
 
 <template>
@@ -93,7 +103,8 @@ onMounted(() => void tasks.refresh())
       </Button>
     </header>
 
-    <p v-if="tasks.error" class="inline-alert error">{{ tasks.error }}</p>
+    <p v-if="tasks.error || fileError" class="inline-alert error" role="alert">{{ fileError || tasks.error }}</p>
+    <p v-if="tasks.loading" class="loading-state" role="status">正在刷新任务记录…</p>
 
     <div v-if="!tasks.loading && tasks.total === 0" class="empty-state">
       <strong>还没有任务记录</strong>
@@ -105,54 +116,6 @@ onMounted(() => void tasks.refresh())
     </div>
 
     <div v-else class="task-sections">
-      <section v-if="tasks.subtitleProjects.length" class="task-section">
-        <div class="section-heading">
-          <h2>字幕项目</h2>
-          <div class="section-tools">
-            <span>{{ tasks.subtitleProjects.length }} 个</span>
-            <template v-if="pendingClear === 'subtitles'">
-              <Button size="sm" variant="ghost" @click="pendingClear = ''">取消</Button>
-              <Button size="sm" variant="danger" @click="clearSubtitles">确认清空</Button>
-            </template>
-            <Button v-else size="sm" variant="ghost" @click="pendingClear = 'subtitles'">清空</Button>
-          </div>
-        </div>
-        <div class="task-list">
-          <article v-for="project in tasks.subtitleProjects" :key="project.id" class="task-row">
-            <div class="task-mark subtitle">字</div>
-            <div class="task-copy">
-              <strong>{{ project.title }}</strong>
-              <span>
-                {{ project.sourceLanguage || '自动识别' }} → 中文 · {{ project.segments.length }} 段
-                <template v-if="projectElapsed(project)"> · {{ projectElapsed(project) }}</template>
-                <template v-if="projectStatus(project)"> · {{ projectStatus(project) }}</template>
-              </span>
-            </div>
-            <time>{{ formatDate(project.updatedAt) }}</time>
-            <div class="task-actions">
-              <template v-if="pendingDelete === `subtitle:${project.id}`">
-                <Button class="confirm-button" size="sm" variant="ghost" @click="pendingDelete = ''">取消</Button>
-                <Button class="confirm-button" size="sm" variant="danger" @click="removeProject(project.id)">删除记录</Button>
-              </template>
-              <template v-else>
-                <Button v-if="artifactPath(project, 'video')" size="icon" variant="ghost" title="播放字幕视频" aria-label="播放字幕视频" @click="openPath(artifactPath(project, 'video'))">
-                  <i class="icon" :style="iconStyle(mediaVideoIcon)" />
-                </Button>
-                <Button v-if="artifactPath(project, 'subtitle')" size="icon" variant="ghost" title="打开字幕" aria-label="打开字幕" @click="openPath(artifactPath(project, 'subtitle'))">
-                  <i class="icon" :style="iconStyle(pageIcon)" />
-                </Button>
-                <Button size="icon" variant="ghost" title="打开文件夹" aria-label="打开文件夹" @click="openParentFolder(project.sourcePath)">
-                  <i class="icon" :style="iconStyle(folderIcon)" />
-                </Button>
-                <Button size="icon" variant="ghost" title="删除项目记录" aria-label="删除项目记录" @click="pendingDelete = `subtitle:${project.id}`">
-                  <i class="icon" :style="iconStyle(trashIcon)" />
-                </Button>
-              </template>
-            </div>
-          </article>
-        </div>
-      </section>
-
       <section v-if="tasks.downloads.length" class="task-section">
         <div class="section-heading">
           <h2>下载记录</h2>
@@ -169,7 +132,7 @@ onMounted(() => void tasks.refresh())
           <article v-for="item in tasks.downloads" :key="item.id" class="task-row">
             <div class="task-mark download">下</div>
             <div class="task-copy">
-              <strong>{{ item.title }}</strong>
+              <strong :title="item.title">{{ item.title }}</strong>
               <span>{{ item.extractor || '视频' }}</span>
             </div>
             <time>{{ formatDate(item.completedAt) }}</time>
@@ -179,10 +142,10 @@ onMounted(() => void tasks.refresh())
                 <Button class="confirm-button" size="sm" variant="danger" @click="removeDownload(item.id)">删除记录</Button>
               </template>
               <template v-else>
-                <Button size="icon" variant="ghost" title="打开视频" aria-label="打开视频" @click="openPath(item.filePath)">
+                <Button size="icon" variant="ghost" title="打开视频" aria-label="打开视频" @click="openFile(item.filePath)">
                   <i class="icon" :style="iconStyle(mediaVideoIcon)" />
                 </Button>
-                <Button size="icon" variant="ghost" title="打开文件夹" aria-label="打开文件夹" @click="openParentFolder(item.filePath)">
+                <Button size="icon" variant="ghost" title="打开文件夹" aria-label="打开文件夹" @click="openFile(item.filePath, true)">
                   <i class="icon" :style="iconStyle(folderIcon)" />
                 </Button>
                 <Button size="icon" variant="ghost" title="删除下载记录" aria-label="删除下载记录" @click="pendingDelete = `download:${item.id}`">
@@ -193,6 +156,59 @@ onMounted(() => void tasks.refresh())
           </article>
         </div>
       </section>
+
+      <section v-if="tasks.subtitleProjects.length" class="task-section">
+        <div class="section-heading">
+          <h2>字幕项目</h2>
+          <div class="section-tools">
+            <span>{{ tasks.subtitleProjects.length }} 个</span>
+            <template v-if="pendingClear === 'subtitles'">
+              <Button size="sm" variant="ghost" @click="pendingClear = ''">取消</Button>
+              <Button size="sm" variant="danger" @click="clearSubtitles">确认清空</Button>
+            </template>
+            <Button v-else size="sm" variant="ghost" @click="pendingClear = 'subtitles'">清空</Button>
+          </div>
+        </div>
+        <div class="task-list">
+          <article v-for="project in tasks.subtitleProjects" :key="project.id" class="task-row">
+            <div class="task-mark subtitle">字</div>
+            <div class="task-copy">
+              <strong :title="project.title">{{ project.title }}</strong>
+              <span>
+                {{ project.sourceLanguage || '自动识别' }} → 中文 · {{ project.segments.length }} 段
+                <template v-if="projectElapsed(project)"> · {{ projectElapsed(project) }}</template>
+                <template v-if="projectStatus(project)"> · {{ projectStatus(project) }}</template>
+              </span>
+            </div>
+            <time>{{ formatDate(project.updatedAt) }}</time>
+            <div class="task-actions">
+              <template v-if="pendingDelete === `subtitle:${project.id}`">
+                <Button class="confirm-button" size="sm" variant="ghost" @click="pendingDelete = ''">取消</Button>
+                <Button class="confirm-button" size="sm" variant="danger" @click="removeProject(project.id)">删除记录</Button>
+              </template>
+              <template v-else>
+                <Button class="task-action-text" size="sm" variant="outline" @click="openProject(project)">
+                  {{ ['paused', 'failed'].includes(project.status) ? '继续处理' : '查看项目' }}
+                </Button>
+                <Button v-if="artifactPath(project, 'video')" size="icon" variant="ghost" title="播放字幕视频" aria-label="播放字幕视频" @click="openFile(artifactPath(project, 'video'))">
+                  <i class="icon" :style="iconStyle(mediaVideoIcon)" />
+                </Button>
+                <Button v-if="artifactPath(project, 'subtitle')" size="icon" variant="ghost" title="打开字幕" aria-label="打开字幕" @click="openFile(artifactPath(project, 'subtitle'))">
+                  <i class="icon" :style="iconStyle(pageIcon)" />
+                </Button>
+                <Button size="icon" variant="ghost" title="打开文件夹" aria-label="打开文件夹" @click="openFile(project.sourcePath, true)">
+                  <i class="icon" :style="iconStyle(folderIcon)" />
+                </Button>
+                <Button size="icon" variant="ghost" title="删除项目记录" aria-label="删除项目记录" @click="pendingDelete = `subtitle:${project.id}`">
+                  <i class="icon" :style="iconStyle(trashIcon)" />
+                </Button>
+              </template>
+            </div>
+          </article>
+        </div>
+      </section>
+
+
     </div>
   </section>
 </template>
@@ -212,6 +228,13 @@ onMounted(() => void tasks.refresh())
 .task-actions .confirm-button {
   width: auto;
   min-width: 46px;
+  padding-inline: 9px;
+}
+
+.task-actions .task-action-text {
+  width: auto;
+  min-width: max-content;
+  flex: 0 0 auto;
   padding-inline: 9px;
 }
 

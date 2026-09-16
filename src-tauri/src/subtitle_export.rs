@@ -681,6 +681,7 @@ mod tests {
             translation_provider: None,
             artifacts: vec![],
             performance: Default::default(),
+            workspace: Default::default(),
         }
     }
 

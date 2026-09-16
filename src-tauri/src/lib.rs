@@ -4,11 +4,13 @@ mod commands;
 mod downloader;
 mod errors;
 mod gemini;
+mod glm;
 mod openai_compatible;
 mod process_utils;
 mod progress;
 mod subtitle_commands;
 mod subtitle_export;
+mod subtitle_extract;
 mod subtitle_store;
 mod subtitle_types;
 mod tool_installer;
@@ -34,6 +36,7 @@ pub fn run() {
             commands::check_dependencies,
             commands::check_ytdlp_update,
             commands::parse_video,
+            subtitle_extract::extract_subtitles,
             commands::start_download,
             commands::cancel_download,
             commands::open_path,
@@ -46,11 +49,15 @@ pub fn run() {
             subtitle_commands::get_gemini_settings,
             subtitle_commands::save_gemini_settings,
             subtitle_commands::test_gemini_connection,
+            subtitle_commands::test_glm_connection,
             subtitle_commands::test_openai_compatible_connection,
+            subtitle_commands::list_openai_compatible_models,
             subtitle_commands::estimate_transcription_cost,
             subtitle_commands::analyze_subtitle_source,
             subtitle_commands::create_subtitle_project,
             subtitle_commands::import_subtitle_track,
+            subtitle_commands::get_subtitle_project,
+            subtitle_commands::save_subtitle_project_workspace,
             subtitle_commands::list_subtitle_projects,
             subtitle_commands::delete_subtitle_project,
             subtitle_commands::clear_subtitle_projects,
@@ -59,7 +66,9 @@ pub fn run() {
             subtitle_commands::start_gemini_translation,
             subtitle_commands::start_bing_translation,
             subtitle_commands::start_openai_compatible_translation,
+            subtitle_commands::start_glm_translation,
             subtitle_commands::start_gemini_polish,
+            subtitle_commands::start_glm_polish,
             subtitle_commands::retry_subtitle_chunk,
             subtitle_commands::cancel_subtitle_task,
             subtitle_commands::save_subtitle_segments,

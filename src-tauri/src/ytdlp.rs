@@ -1,6 +1,7 @@
 use crate::commands::DownloadMode;
 
 pub const OUTPUT_TEMPLATE: &str = "%(title).200B.%(ext)s";
+pub const PROGRESS_PLAN_PREFIX: &str = "__YDLITE_PLAN__";
 const GENERIC_IMPERSONATE_ARGS: [&str; 2] = ["--extractor-args", "generic:impersonate"];
 const CONCURRENT_FRAGMENTS: &str = "8";
 const BEST_COMPATIBLE_FORMAT: &str =
@@ -24,14 +25,16 @@ pub enum SiteProfile {
 }
 
 pub fn site_profile(url: &str) -> SiteProfile {
-    let lower = url.to_ascii_lowercase();
-    if lower.contains("bilibili.com") || lower.contains("b23.tv") {
+    let parsed = url::Url::parse(url).ok();
+    let host = parsed.as_ref().and_then(|url| url.host_str()).unwrap_or("");
+    let matches = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
+    if matches("bilibili.com") || matches("b23.tv") {
         SiteProfile::Bilibili
-    } else if lower.contains("youtube.com") || lower.contains("youtu.be") {
+    } else if matches("youtube.com") || matches("youtu.be") {
         SiteProfile::Youtube
-    } else if lower.contains("twitter.com") || lower.contains("x.com") {
+    } else if matches("twitter.com") || matches("x.com") {
         SiteProfile::Twitter
-    } else if lower.contains("instagram.com") {
+    } else if matches("instagram.com") {
         SiteProfile::Instagram
     } else {
         SiteProfile::Generic
@@ -56,24 +59,12 @@ pub fn parse_args(url: &str, flat_playlist: bool, options: &YtdlpOptions) -> Vec
     args
 }
 
-#[cfg(test)]
 pub fn download_args(
     mode: &DownloadMode,
     custom_format: Option<&str>,
     dir: &str,
     url: &str,
     options: &YtdlpOptions,
-) -> Vec<String> {
-    download_args_with_accelerator(mode, custom_format, dir, url, options, false)
-}
-
-pub fn download_args_with_accelerator(
-    mode: &DownloadMode,
-    custom_format: Option<&str>,
-    dir: &str,
-    url: &str,
-    options: &YtdlpOptions,
-    use_aria2: bool,
 ) -> Vec<String> {
     let mut args = Vec::new();
     args.extend(mode_args(mode, custom_format));
@@ -84,33 +75,25 @@ pub fn download_args_with_accelerator(
             "-N",
             CONCURRENT_FRAGMENTS,
             "--no-warnings",
+            "--no-quiet",
             "--windows-filenames",
             "--restrict-filenames",
             "--encoding",
             "utf-8",
-            "-o",
-            OUTPUT_TEMPLATE,
-            "-P",
-            dir,
+            "--print",
         ]
         .into_iter()
         .map(str::to_string),
     );
-    args.extend(GENERIC_IMPERSONATE_ARGS.into_iter().map(str::to_string));
-    if use_aria2 {
-        args.extend(
-            [
-                "--downloader",
-                "aria2c",
-                "--downloader",
-                "dash,m3u8:native",
-                "--downloader-args",
-                "aria2c:-x 8 -s 8 -k 1M --file-allocation=none",
-            ]
+    args.push(format!(
+        "before_dl:{PROGRESS_PLAN_PREFIX}%(requested_formats.0.format_id)s|%(requested_formats.0.filesize,requested_formats.0.filesize_approx)s|%(requested_formats.1.format_id)s|%(requested_formats.1.filesize,requested_formats.1.filesize_approx)s"
+    ));
+    args.extend(
+        ["-o", OUTPUT_TEMPLATE, "-P", dir]
             .into_iter()
             .map(str::to_string),
-        );
-    }
+    );
+    args.extend(GENERIC_IMPERSONATE_ARGS.into_iter().map(str::to_string));
     args.extend(option_args(options));
     args.push(url.to_string());
     args
@@ -179,6 +162,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn site_profile_matches_hosts_only() {
+        assert_eq!(
+            site_profile("https://www.youtube.com/watch?v=1"),
+            SiteProfile::Youtube
+        );
+        assert_eq!(
+            site_profile("https://example.com/?next=x.com"),
+            SiteProfile::Generic
+        );
+        assert_eq!(site_profile("https://notx.com/video"), SiteProfile::Generic);
+        assert_eq!(
+            site_profile("https://youtube.com.example.org/video"),
+            SiteProfile::Generic
+        );
+    }
+
+    #[test]
     fn parse_args_always_disable_playlist() {
         let args = parse_args("https://example.com/video", false, &YtdlpOptions::default());
 
@@ -212,6 +212,11 @@ mod tests {
             .windows(2)
             .any(|pair| pair == ["-N", CONCURRENT_FRAGMENTS]));
         assert!(args.iter().any(|arg| arg == "--no-warnings"));
+        assert!(args.iter().any(|arg| arg == "--no-quiet"));
+        assert!(args.windows(2).any(|pair| {
+            pair[0] == "--print"
+                && pair[1].starts_with(&format!("before_dl:{PROGRESS_PLAN_PREFIX}"))
+        }));
         assert!(args.iter().any(|arg| arg == "--windows-filenames"));
         assert!(args.iter().any(|arg| arg == "--restrict-filenames"));
         assert!(args.windows(2).any(|pair| pair == ["-P", "D:\\Downloads"]));
@@ -222,27 +227,6 @@ mod tests {
             args.last().map(String::as_str),
             Some("https://example.com/video")
         );
-    }
-
-    #[test]
-    fn aria2_acceleration_is_opt_in() {
-        let args = download_args_with_accelerator(
-            &DownloadMode::Best,
-            None,
-            r"E:\Download",
-            "https://example.com/video",
-            &YtdlpOptions::default(),
-            true,
-        );
-        assert!(args
-            .windows(2)
-            .any(|pair| pair == ["--downloader", "aria2c"]));
-        assert!(args
-            .windows(2)
-            .any(|pair| pair == ["--downloader", "dash,m3u8:native"]));
-        assert!(args
-            .iter()
-            .any(|arg| arg.contains("--file-allocation=none")));
     }
 
     #[test]

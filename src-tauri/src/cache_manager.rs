@@ -82,7 +82,9 @@ fn status(app: &AppHandle) -> Result<CacheStatus, AppError> {
     let temporary_bytes = directory_size(&dir.join("subtitle-temp"));
     let webview_bytes = directory_size(&dir.join("EBWebView"));
     Ok(CacheStatus {
-        cache_bytes: temporary_bytes + webview_bytes,
+        // WebView2 的磁盘回收由系统异步执行，无法保证清理后立即反映在目录大小中。
+        // 仅把应用可同步删除的字幕临时文件计入“可清理缓存”，使显示值与实际释放值一致。
+        cache_bytes: temporary_bytes,
         temporary_bytes,
         webview_bytes,
         model_bytes: directory_size(&dir.join("whisper")),

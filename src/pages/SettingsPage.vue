@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import checkIcon from 'iconoir/icons/check.svg?url'
+import eyeClosedIcon from 'iconoir/icons/eye-closed.svg?url'
+import eyeIcon from 'iconoir/icons/eye.svg?url'
 import trashIcon from 'iconoir/icons/trash.svg?url'
+import AppDialog from '@/components/ui/AppDialog.vue'
+import { registerCloseGuard } from '@/lib/closeGuards'
 import { Button } from '@/components/ui/button'
 import { AppSelect } from '@/components/ui/select'
 import {
@@ -15,11 +20,20 @@ import {
   listWhisperRuntimes,
   onWhisperDownloadProgress,
   saveGeminiSettings,
-  testGeminiConnection,
   testOpenAiCompatibleConnection,
 } from '@/api/tauri'
 import type { CacheStatus, GeminiSettings, WhisperDownloadEvent, WhisperModelInfo, WhisperRuntimeInfo } from '@/types'
 
+type ProcessingMode = GeminiSettings['processingMode']
+type ProviderPreset = {
+  id: string
+  label: string
+  apiBase?: string
+  website?: string
+  models?: string[]
+}
+
+const route = useRoute()
 const settings = ref<GeminiSettings>({
   hasApiKey: false,
   defaultModel: 'gemini-3.1-flash-lite',
@@ -32,30 +46,155 @@ const settings = ref<GeminiSettings>({
   hasOpenaiApiKey: false,
   openaiApiBase: 'https://api.openai.com/v1',
   openaiModel: '',
+  hasGlmApiKey: false,
 })
-const apiKey = ref('')
 const openaiApiKey = ref('')
+const showOpenaiApiKey = ref(false)
 const saving = ref(false)
-const testing = ref(false)
 const testingCustom = ref(false)
 const notice = ref('')
 const error = ref('')
+const customModels = ref<string[]>([])
+const selectedProviderId = ref('openai')
+const customModelsStatus = ref('选择服务商后会直接显示该服务商的预置模型。')
 const whisperModels = ref<WhisperModelInfo[]>([])
 const whisperRuntimes = ref<WhisperRuntimeInfo[]>([])
 const downloadProgress = ref<Record<string, WhisperDownloadEvent>>({})
 const cacheStatus = ref<CacheStatus | null>(null)
 const clearingCache = ref(false)
+const localAssetsSection = ref<HTMLElement | null>(null)
+const providerSetupSection = ref<HTMLElement | null>(null)
+const savedDraft = ref('')
+let savedSettings: GeminiSettings | null = null
+let unregisterCloseGuard: (() => void) | undefined
+let pendingLeave: Promise<boolean> | undefined
+const showUnsavedConfirm = ref(false)
 let unlistenDownload: undefined | (() => void)
+let resolveUnsavedConfirm: ((allow: boolean) => void) | undefined
 
-const geminiModelOptions = [
-  { value: 'gemini-3.1-flash-lite', label: '经济模式' },
-  { value: 'gemini-3.5-flash', label: '高质量模式' },
-]
-const concurrencyOptions = [
-  { value: 1, label: '1（稳定）' },
-  { value: 2, label: '2（推荐）' },
+const providerPresets: ProviderPreset[] = [
+  {
+    id: 'openai',
+    label: 'OpenAI / ChatGPT · https://api.openai.com/v1',
+    apiBase: 'https://api.openai.com/v1',
+    website: 'https://platform.openai.com/api-keys',
+    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini · https://generativelanguage.googleapis.com/v1beta/openai',
+    apiBase: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    website: 'https://aistudio.google.com/apikey',
+    models: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'],
+  },
+  {
+    id: 'kimi',
+    label: 'Kimi Code · https://api.kimi.com/coding/v1',
+    apiBase: 'https://api.kimi.com/coding/v1',
+    website: 'https://www.kimi.com/code/',
+    models: ['k3', 'k3-256k', 'kimi-for-coding', 'kimi-for-coding-highspeed'],
+  },
+  {
+    id: 'glm',
+    label: 'GLM · https://api.z.ai/api/paas/v4',
+    apiBase: 'https://api.z.ai/api/paas/v4',
+    website: 'https://open.bigmodel.cn/usercenter/apikeys',
+    models: ['glm-5.3', 'glm-5.1', 'glm-5-turbo', 'glm-5'],
+  },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek · https://api.deepseek.com/v1',
+    apiBase: 'https://api.deepseek.com/v1',
+    website: 'https://platform.deepseek.com/api_keys',
+    models: ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'],
+  },
+  { id: 'custom', label: '自定义 OpenAI 兼容接口' },
 ]
 
+const processingModes: Array<{
+  value: ProcessingMode
+  title: string
+  badge: string
+}> = [
+  {
+    value: 'local_free',
+    title: '本地免费',
+    badge: '无需 Key',
+  },
+  {
+    value: 'local_custom',
+    title: '自定义接口',
+    badge: '高级',
+  },
+]
+
+const hasCustomKey = computed(() => Boolean(settings.value.hasOpenaiApiKey || openaiApiKey.value.trim()))
+const canTestCustom = computed(() => Boolean(hasCustomKey.value && settings.value.openaiModel.trim()))
+const providerOptions = computed(() => providerPresets.map(({ id, label }) => ({ value: id, label })))
+const selectedProvider = computed(() =>
+  providerPresets.find(provider => provider.id === selectedProviderId.value) ?? providerPresets[0],
+)
+const customModelOptions = computed(() => {
+  const models = [...customModels.value]
+  if (settings.value.openaiModel && !models.includes(settings.value.openaiModel)) {
+    models.unshift(settings.value.openaiModel)
+  }
+  if (models.length) return models.map(model => ({ value: model, label: model }))
+  return [{ value: '', label: customModelsStatus.value || '等待自动加载模型' }]
+})
+
+function draftSignature() {
+  return JSON.stringify({
+    processingMode: settings.value.processingMode,
+    whisperModel: settings.value.whisperModel,
+    whisperRuntime: settings.value.whisperRuntime,
+    openaiApiBase: settings.value.openaiApiBase,
+    openaiModel: settings.value.openaiModel,
+  })
+}
+
+const hasUnsavedChanges = computed(() =>
+  Boolean(savedDraft.value) && (
+    savedDraft.value !== draftSignature()
+    || Boolean(openaiApiKey.value.trim())
+  ),
+)
+
+function markSaved() {
+  savedDraft.value = draftSignature()
+  savedSettings = structuredClone({ ...settings.value })
+}
+
+function requestUnsavedConfirm() {
+  if (!hasUnsavedChanges.value) return Promise.resolve(true)
+  if (pendingLeave) return pendingLeave
+  showUnsavedConfirm.value = true
+  pendingLeave = new Promise<boolean>((resolve) => {
+    resolveUnsavedConfirm = resolve
+  })
+  return pendingLeave
+}
+
+function settleUnsavedConfirm(allow: boolean) {
+  showUnsavedConfirm.value = false
+  const resolve = resolveUnsavedConfirm
+  resolveUnsavedConfirm = undefined
+  pendingLeave = undefined
+  resolve?.(allow)
+}
+
+function discardAndContinue() {
+  if (savedSettings) settings.value = structuredClone(savedSettings)
+  openaiApiKey.value = ''
+  showOpenaiApiKey.value = false
+  syncSelectedProvider()
+  customModels.value = selectedProvider.value.models ?? []
+  settleUnsavedConfirm(true)
+}
+
+async function saveAndContinue() {
+  if (await persistSettings(true)) settleUnsavedConfirm(true)
+}
 function iconStyle(url: string) {
   return { '--icon-url': `url("${url}")` }
 }
@@ -104,13 +243,14 @@ async function cleanCache() {
   }
 }
 
-async function save() {
+async function persistSettings(showNotice = true) {
   saving.value = true
   error.value = ''
-  notice.value = ''
+  if (showNotice) notice.value = ''
   try {
     settings.value = await saveGeminiSettings({
-      apiKey: apiKey.value.trim() || undefined,
+      // 保留旧字段的当前值以兼容已有项目；设置页不再管理专属 Gemini/GLM 凭据。
+      apiKey: undefined,
       defaultModel: settings.value.defaultModel,
       defaultTargetLanguage: 'zh-CN',
       maxCostUsd: settings.value.maxCostUsd,
@@ -121,18 +261,26 @@ async function save() {
       openaiApiKey: openaiApiKey.value.trim() || undefined,
       openaiApiBase: settings.value.openaiApiBase,
       openaiModel: settings.value.openaiModel,
+      glmApiKey: undefined,
     })
-    apiKey.value = ''
     openaiApiKey.value = ''
-    notice.value = '设置已保存。'
+    markSaved()
+    if (showNotice) notice.value = '设置已保存。'
+    return true
   } catch (value) {
     error.value = errorText(value)
+    return false
   } finally {
     saving.value = false
   }
 }
 
+async function save() {
+  await persistSettings(true)
+}
+
 async function testCustomConnection() {
+  if (!await persistSettings(false)) return
   testingCustom.value = true
   error.value = ''
   notice.value = ''
@@ -143,6 +291,30 @@ async function testCustomConnection() {
   } finally {
     testingCustom.value = false
   }
+}
+
+function normalizeApiBase(apiBase: string) {
+  return apiBase.trim().replace(/\/+$/, '')
+}
+
+function syncSelectedProvider() {
+  const normalizedBase = normalizeApiBase(settings.value.openaiApiBase)
+  const preset = providerPresets.find(provider =>
+    provider.apiBase && normalizeApiBase(provider.apiBase) === normalizedBase,
+  )
+  selectedProviderId.value = preset?.id ?? 'custom'
+}
+
+function selectProvider(value: string | number) {
+  const provider = providerPresets.find(item => item.id === String(value))
+  if (!provider) return
+  selectedProviderId.value = provider.id
+  if (provider.apiBase) settings.value.openaiApiBase = provider.apiBase
+  settings.value.openaiModel = ''
+  customModels.value = provider.models ?? []
+  customModelsStatus.value = provider.models?.length
+    ? `已准备 ${provider.models.length} 个 ${provider.label.split(' · ')[0]} 模型。`
+    : '自定义接口请在保存 Key 后测试连接。'
 }
 
 async function refreshWhisperAssets() {
@@ -190,22 +362,37 @@ async function installRuntime(id: string) {
   }
 }
 
-async function testConnection() {
-  testing.value = true
-  error.value = ''
-  notice.value = ''
-  try {
-    notice.value = await testGeminiConnection()
-  } catch (value) {
-    error.value = errorText(value)
-  } finally {
-    testing.value = false
+function requestedSetup() {
+  const setup = route.query.setup
+  return typeof setup === 'string' && ['custom', 'local'].includes(setup) ? setup : ''
+}
+
+async function applyRequestedSetup(scroll = true) {
+  const setup = requestedSetup()
+  const modeBySetup: Record<string, ProcessingMode> = {
+    custom: 'local_custom',
+    local: 'local_free',
   }
+  if (setup && modeBySetup[setup]) settings.value.processingMode = modeBySetup[setup]
+  if (!scroll || !setup) return
+  await nextTick()
+  const target = setup === 'local' ? localAssetsSection.value : providerSetupSection.value
+  target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
 onMounted(async () => {
+  unregisterCloseGuard = registerCloseGuard(requestUnsavedConfirm)
   try {
     settings.value = await getGeminiSettings()
+    if (!processingModes.some(mode => mode.value === settings.value.processingMode)) {
+      settings.value.processingMode = 'local_free'
+    }
+    syncSelectedProvider()
+    customModels.value = selectedProvider.value.models ?? []
+    if (customModels.value.length) {
+      customModelsStatus.value = `已准备 ${customModels.value.length} 个 ${selectedProvider.value.label.split(' · ')[0]} 模型。`
+    }
+    await applyRequestedSetup(false)
     await Promise.all([
       refreshWhisperAssets(),
       getCacheStatus().then(value => { cacheStatus.value = value }),
@@ -216,87 +403,116 @@ onMounted(async () => {
         [`${event.assetType}:${event.id}`]: event,
       }
     })
+    await applyRequestedSetup(Boolean(requestedSetup()))
+    markSaved()
   } catch (value) {
     error.value = errorText(value)
   }
 })
-onBeforeUnmount(() => unlistenDownload?.())
+onBeforeUnmount(() => {
+  unlistenDownload?.()
+  unregisterCloseGuard?.()
+  settleUnsavedConfirm(false)
+})
+
+onBeforeRouteLeave(async () => requestUnsavedConfirm())
+
+watch(() => route.query.setup, () => {
+  void applyRequestedSetup()
+})
+
+watch(() => settings.value.openaiApiBase, () => {
+  syncSelectedProvider()
+  customModels.value = selectedProvider.value.models ?? []
+  customModelsStatus.value = customModels.value.length
+    ? `已准备 ${customModels.value.length} 个 ${selectedProvider.value.label.split(' · ')[0]} 模型。`
+    : '自定义接口请在保存 Key 后测试连接。'
+})
 </script>
 
 <template>
   <section class="workspace-page settings-page">
     <header class="page-heading">
-      <div>
-        <h1>设置</h1>
-        <p>选择字幕处理方式。模型仅在你主动下载后安装。</p>
-      </div>
+      <h1>设置</h1>
     </header>
 
     <div class="settings-sheet">
       <section>
-        <div class="setting-intro">
-          <h2>默认字幕模式</h2>
-          <p>选择默认使用的识别与翻译渠道。</p>
-        </div>
         <fieldset class="processing-mode-list">
           <legend>处理方式</legend>
-          <label class="processing-mode" :class="{ selected: settings.processingMode === 'local_free' }">
-            <input v-model="settings.processingMode" type="radio" value="local_free" />
+          <label
+            v-for="mode in processingModes"
+            :key="mode.value"
+            class="processing-mode"
+            :class="{ selected: settings.processingMode === mode.value }"
+          >
+            <input v-model="settings.processingMode" type="radio" :value="mode.value" />
             <span class="mode-copy">
-              <strong>本地免费</strong>
-              <small>Whisper 本地识别，必应翻译，不需要 API Key</small>
+              <span class="mode-title-line">
+                <strong>{{ mode.title }}</strong>
+              </span>
             </span>
-            <span class="mode-badge recommended">推荐</span>
-          </label>
-          <label class="processing-mode" :class="{ selected: settings.processingMode === 'local_custom' }">
-            <input v-model="settings.processingMode" type="radio" value="local_custom" />
-            <span class="mode-copy">
-              <strong>本地识别 + 自定义 AI</strong>
-              <small>Whisper 本地识别，使用你自己的兼容接口翻译</small>
-            </span>
-            <span class="mode-badge">自定义</span>
-          </label>
-          <label class="processing-mode" :class="{ selected: settings.processingMode === 'gemini' }">
-            <input v-model="settings.processingMode" type="radio" value="gemini" />
-            <span class="mode-copy">
-              <strong>Gemini 云端</strong>
-              <small>使用 Gemini 完成识别与翻译，需要 Gemini Key</small>
-            </span>
-            <span class="mode-badge">云端</span>
+            <span class="mode-badge">{{ mode.badge }}</span>
           </label>
         </fieldset>
       </section>
 
-      <section v-if="settings.processingMode === 'local_custom'">
-        <div class="setting-intro">
-          <h2>OpenAI 兼容接口（可选）</h2>
-          <p>用于自定义 AI 翻译，支持 OpenAI、OpenRouter、Groq、硅基流动及兼容服务。</p>
-        </div>
+      <section v-if="settings.processingMode === 'local_custom'" ref="providerSetupSection">
         <div class="settings-fields">
           <label class="wide">
-            <span>API Base URL</span>
+            <span>服务商 / API Base URL</span>
+            <AppSelect
+              :model-value="selectedProviderId"
+              :options="providerOptions"
+              aria-label="服务商和 API Base URL"
+              @update:model-value="selectProvider"
+            />
+            <small v-if="selectedProvider.website" class="field-hint">
+              <a :href="selectedProvider.website" target="_blank" rel="noreferrer">打开 {{ selectedProvider.label.split(' · ')[0] }} 官方 API 平台</a>
+            </small>
+          </label>
+          <label v-if="selectedProviderId === 'custom'" class="wide">
+            <span>自定义 API Base URL</span>
             <input v-model="settings.openaiApiBase" type="url" placeholder="https://api.example.com/v1" />
           </label>
-          <label>
-            <span>模型名称</span>
-            <input v-model="settings.openaiModel" type="text" placeholder="填写服务支持的模型ID" />
+          <label class="wide">
+            <span>模型</span>
+            <AppSelect
+              v-model="settings.openaiModel"
+              :options="customModelOptions"
+              :disabled="!customModels.length && !settings.openaiModel"
+              aria-label="可选模型"
+            />
+            <small class="field-hint">{{ customModelsStatus }}</small>
           </label>
-          <label>
+          <label class="wide">
             <span>API Key</span>
-            <input v-model="openaiApiKey" type="password" autocomplete="off" :placeholder="settings.hasOpenaiApiKey ? '已安全保存；留空不会修改' : '输入 API Key'" />
+            <span class="key-input">
+              <input v-model="openaiApiKey" :type="showOpenaiApiKey ? 'text' : 'password'" autocomplete="off" :placeholder="settings.hasOpenaiApiKey ? '已安全保存；留空不会修改' : '输入 API Key'" />
+              <button
+                type="button"
+                class="key-visibility"
+                :aria-label="showOpenaiApiKey ? '隐藏 API Key' : '显示 API Key'"
+                :title="showOpenaiApiKey ? '隐藏 API Key' : '显示 API Key'"
+                @click="showOpenaiApiKey = !showOpenaiApiKey"
+              >
+                <i class="icon" :style="iconStyle(showOpenaiApiKey ? eyeClosedIcon : eyeIcon)" />
+              </button>
+            </span>
           </label>
-          <Button variant="outline" :disabled="testingCustom || !settings.hasOpenaiApiKey || !settings.openaiModel" @click="testCustomConnection">
-            {{ testingCustom ? '正在测试' : '测试自定义接口' }}
+          <Button variant="outline" :disabled="saving || testingCustom || !canTestCustom" @click="testCustomConnection">
+            {{ testingCustom ? '正在测试' : '保存并测试连接' }}
           </Button>
         </div>
       </section>
 
-      <section v-if="settings.processingMode !== 'gemini'">
-        <div class="setting-intro">
-          <h2>本地 Whisper</h2>
-          <p>模型和运行组件均为可选下载。未安装时不会在后台自动下载。</p>
-        </div>
+      <section ref="localAssetsSection">
         <div class="whisper-assets">
+          <div class="asset-section-heading">
+            <div>
+              <strong>识别模型</strong>
+            </div>
+          </div>
           <div class="asset-grid">
             <article v-for="model in whisperModels" :key="model.id" class="asset-card" :class="{ selected: settings.whisperModel === model.id }">
               <label>
@@ -318,6 +534,11 @@ onBeforeUnmount(() => unlistenDownload?.())
             </article>
           </div>
 
+          <div class="asset-section-heading runtime-heading">
+            <div>
+              <strong>运行组件</strong>
+            </div>
+          </div>
           <div class="runtime-grid">
             <article v-for="runtime in whisperRuntimes" :key="runtime.id" class="runtime-row">
               <label>
@@ -336,44 +557,7 @@ onBeforeUnmount(() => unlistenDownload?.())
         </div>
       </section>
 
-      <section v-if="settings.processingMode === 'gemini'">
-        <div class="setting-intro">
-          <h2>Gemini（可选）</h2>
-          <p>只在选择 Gemini 云端模式时使用，Key 会安全保存在 Windows 凭据管理器。</p>
-        </div>
-        <div class="settings-fields">
-          <label class="wide">
-            <span>Gemini Auth Key</span>
-            <input v-model="apiKey" type="password" autocomplete="off" :placeholder="settings.hasApiKey ? '已安全保存；留空不会修改' : '输入 Gemini Auth Key'" />
-          </label>
-          <label>
-            <span>默认处理模式</span>
-            <AppSelect
-              v-model="settings.defaultModel"
-              :options="geminiModelOptions"
-              aria-label="默认处理模式"
-            />
-          </label>
-          <label>
-            <span>单任务费用上限（美元）</span>
-            <input v-model.number="settings.maxCostUsd" type="number" min="0" step="0.1" />
-          </label>
-          <label>
-            <span>并发数</span>
-            <AppSelect
-              v-model="settings.maxConcurrency"
-              :options="concurrencyOptions"
-              aria-label="并发数"
-            />
-          </label>
-        </div>
-      </section>
-
       <section>
-        <div class="setting-intro">
-          <h2>存储</h2>
-          <p>清理临时音频和界面缓存。模型、项目和输出文件会保留。</p>
-        </div>
         <div class="cache-manager">
           <div class="cache-summary">
             <div>
@@ -402,46 +586,125 @@ onBeforeUnmount(() => unlistenDownload?.())
       </section>
 
       <footer class="settings-actions">
-        <div v-if="settings.processingMode === 'gemini'" class="key-status">
-          <i :class="{ active: settings.hasApiKey }" />
-          {{ settings.hasApiKey ? '已保存 API Key' : '尚未保存 API Key' }}
-        </div>
-        <div v-else-if="settings.processingMode === 'local_custom'" class="key-status">
-          <i :class="{ active: settings.hasOpenaiApiKey }" />
-          {{ settings.hasOpenaiApiKey ? '已保存自定义 API Key' : '尚未保存自定义 API Key' }}
-        </div>
-        <div v-else class="key-status">
-          <i class="active" />
-          本地免费模式
-        </div>
-        <Button v-if="settings.processingMode === 'gemini'" variant="outline" :disabled="testing || !settings.hasApiKey" @click="testConnection">
-          {{ testing ? '正在测试' : '测试连接' }}
-        </Button>
-        <Button :disabled="saving" @click="save">
+        <span class="save-state" role="status">{{ saving ? '正在保存…' : hasUnsavedChanges ? '有未保存的修改' : '设置已保存' }}</span>
+        <Button :disabled="saving || !hasUnsavedChanges" @click="save">
           <i class="icon" :style="iconStyle(checkIcon)" />
           {{ saving ? '正在保存' : '保存设置' }}
         </Button>
       </footer>
     </div>
 
-    <p v-if="error" class="inline-alert error">{{ error }}</p>
-    <p v-if="notice" class="inline-alert success">{{ notice }}</p>
+    <p v-if="error" class="inline-alert error" role="alert">{{ error }}</p>
+    <p v-if="notice" class="inline-alert success" role="status">{{ notice }}</p>
+
+    <AppDialog :open="showUnsavedConfirm" title="保存修改？" :busy="saving" @close="settleUnsavedConfirm(false)">
+      <p>离开前的修改尚未保存。</p>
+      <div class="modal-actions">
+        <Button variant="ghost" :disabled="saving" @click="settleUnsavedConfirm(false)">继续编辑</Button>
+        <Button variant="outline" :disabled="saving" @click="discardAndContinue">放弃修改</Button>
+        <Button :disabled="saving" @click="saveAndContinue">{{ saving ? '正在保存' : '保存并离开' }}</Button>
+      </div>
+    </AppDialog>
   </section>
 </template>
 
 <style scoped>
+.settings-setup-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.8fr);
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto 28px;
+  padding: 18px 20px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+  background: var(--workspace-surface);
+}
+
+.settings-setup-overview > div:first-child > span,
+.settings-setup-overview strong,
+.settings-setup-overview p {
+  display: block;
+}
+
+.settings-setup-overview > div:first-child > span {
+  color: var(--workspace-subtle);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.settings-setup-overview > div:first-child > strong {
+  margin-top: 4px;
+  color: var(--workspace-ink);
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+
+.settings-setup-overview p {
+  margin: 5px 0 0;
+  color: var(--workspace-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.setup-status {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 12px 13px;
+  border-radius: 9px;
+  background: var(--workspace-surface-muted);
+}
+
+.setup-status > i {
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.setup-status.ready {
+  background: var(--success-soft);
+}
+
+.setup-status.ready > i {
+  background: var(--workspace-success);
+}
+
+.setup-status strong,
+.setup-status small {
+  display: block;
+}
+
+.setup-status strong {
+  color: var(--workspace-ink);
+  font-size: 11px;
+}
+
+.setup-status small {
+  margin-top: 3px;
+  color: var(--workspace-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .whisper-assets {
   min-width: 0;
 }
 
 .processing-mode-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   min-width: 0;
   margin: 0;
   padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--workspace-border);
-  border-radius: 10px;
-  background: var(--workspace-surface);
+  border: 0;
+  background: transparent;
+  gap: 10px;
 }
 
 .processing-mode-list legend {
@@ -456,26 +719,28 @@ onBeforeUnmount(() => unlistenDownload?.())
 
 .processing-mode {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
   gap: 12px;
-  min-height: 66px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--workspace-border);
+  min-height: 64px;
+  padding: 12px 14px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 10px;
+  background: var(--workspace-surface);
   cursor: pointer;
-  transition: background-color 140ms ease-out;
-}
-
-.processing-mode:last-child {
-  border-bottom: 0;
+  transition: border-color 140ms ease-out, background-color 140ms ease-out, transform 140ms var(--workspace-ease);
 }
 
 .processing-mode:hover {
+  border-color: var(--workspace-border-strong);
   background: var(--workspace-surface-muted);
+  transform: translateY(-1px);
 }
 
 .processing-mode.selected {
-  background: var(--workspace-accent-soft);
+  border-color: var(--workspace-border);
+  background: var(--workspace-surface);
+  box-shadow: none;
 }
 
 .processing-mode input {
@@ -488,7 +753,13 @@ onBeforeUnmount(() => unlistenDownload?.())
 .mode-copy {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: 5px;
+}
+
+.mode-title-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .mode-copy strong {
@@ -497,10 +768,23 @@ onBeforeUnmount(() => unlistenDownload?.())
   font-weight: 700;
 }
 
+.processing-mode.selected .mode-copy strong {
+  color: var(--workspace-accent);
+}
+
 .mode-copy small {
   color: var(--workspace-muted);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.mode-copy em {
+  overflow: hidden;
+  color: var(--workspace-subtle);
+  font-size: 10px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .processing-mode.selected .mode-copy small {
@@ -508,14 +792,25 @@ onBeforeUnmount(() => unlistenDownload?.())
 }
 
 .mode-badge {
-  min-width: 46px;
-  padding: 4px 7px;
+  grid-column: 2;
+  justify-self: start;
+  margin-top: 0;
+  padding: 3px 6px;
   border-radius: 5px;
   background: var(--workspace-surface-muted);
   color: var(--workspace-muted);
   font-size: 10px;
   font-weight: 700;
   text-align: center;
+}
+
+.mode-recommended {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--workspace-accent-soft) 78%, var(--workspace-surface));
+  color: var(--workspace-accent);
+  font-size: 9px;
+  font-weight: 700;
 }
 
 .mode-badge.recommended {
@@ -529,9 +824,9 @@ onBeforeUnmount(() => unlistenDownload?.())
 }
 
 .settings-sheet > section {
-  grid-template-columns: 190px minmax(0, 1fr);
-  gap: 32px;
-  padding: 24px 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  padding: 26px 0;
   border-top: 1px solid var(--workspace-border);
 }
 
@@ -561,7 +856,7 @@ onBeforeUnmount(() => unlistenDownload?.())
 }
 
 .settings-fields {
-  gap: 18px 14px;
+  gap: 16px 14px;
 }
 
 .settings-fields label {
@@ -573,8 +868,8 @@ onBeforeUnmount(() => unlistenDownload?.())
 
 .settings-fields input,
 .settings-fields select {
-  height: 44px;
-  padding: 0 13px;
+  height: 40px;
+  padding: 0 12px;
   border-color: var(--workspace-border);
   border-radius: 9px;
   background: var(--workspace-surface);
@@ -592,7 +887,101 @@ onBeforeUnmount(() => unlistenDownload?.())
 .settings-fields select:focus {
   border-color: var(--workspace-accent);
   outline: 0;
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--workspace-accent) 14%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--workspace-accent) 16%, transparent);
+}
+
+.field-hint {
+  color: var(--workspace-subtle);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.field-hint a {
+  color: var(--workspace-accent);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.field-hint a:hover,
+.field-hint a:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
+.key-input {
+  position: relative;
+  display: block;
+}
+
+.key-input input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.key-visibility {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--workspace-muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.key-visibility:hover,
+.key-visibility:focus-visible {
+  background: var(--workspace-surface-muted);
+  color: var(--workspace-accent);
+  outline: none;
+}
+
+.asset-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 0 9px;
+}
+
+.asset-section-heading.runtime-heading {
+  margin-top: 22px;
+}
+
+.asset-section-heading strong,
+.asset-section-heading small,
+.asset-section-heading > span {
+  display: block;
+}
+
+.asset-section-heading strong {
+  color: var(--workspace-ink);
+  font-size: 12px;
+}
+
+.asset-section-heading small,
+.asset-section-heading > span {
+  margin-top: 4px;
+  color: var(--workspace-subtle);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.asset-section-heading > span {
+  max-width: 45%;
+  margin: 0;
+  overflow: hidden;
+  color: var(--workspace-muted);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .asset-grid {
@@ -601,10 +990,11 @@ onBeforeUnmount(() => unlistenDownload?.())
   gap: 0;
   overflow: hidden;
   border: 1px solid var(--workspace-border);
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
 }
 
 .asset-card {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(190px, 0.8fr) minmax(220px, 1.2fr) auto;
   align-items: center;
@@ -616,7 +1006,7 @@ onBeforeUnmount(() => unlistenDownload?.())
   border-bottom: 1px solid var(--workspace-border);
   border-radius: 0;
   background: var(--workspace-surface);
-  transition: background-color 140ms ease-out;
+  transition: background-color 160ms ease-out, box-shadow 160ms ease-out;
 }
 
 .asset-card:last-child {
@@ -624,8 +1014,12 @@ onBeforeUnmount(() => unlistenDownload?.())
 }
 
 .asset-card.selected {
-  background: var(--workspace-accent-soft);
-  box-shadow: inset 3px 0 var(--workspace-accent);
+  background: var(--workspace-surface);
+  box-shadow: none;
+}
+
+.asset-card.selected strong {
+  color: var(--workspace-accent);
 }
 
 .asset-card label,
@@ -719,10 +1113,10 @@ onBeforeUnmount(() => unlistenDownload?.())
 .runtime-grid {
   display: grid;
   gap: 0;
-  margin-top: 18px;
+  margin-top: 0;
   overflow: hidden;
   border: 1px solid var(--workspace-border);
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
   background: color-mix(in oklch, var(--workspace-surface) 72%, transparent);
 }
 
@@ -750,14 +1144,21 @@ onBeforeUnmount(() => unlistenDownload?.())
 }
 
 .settings-actions {
-  position: static;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
   gap: 10px;
-  margin-top: 8px;
-  padding: 14px 16px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 10px;
+  margin-top: 26px;
+  padding: 14px 0;
+  border: 0;
   background: var(--workspace-surface);
   box-shadow: none;
+}
+
+.unsaved-modal p {
+  margin: 0;
+  color: var(--workspace-muted);
+  font-size: 13px;
 }
 
 .cache-manager {
@@ -855,6 +1256,11 @@ onBeforeUnmount(() => unlistenDownload?.())
 }
 
 @media (max-width: 900px) {
+  .settings-setup-overview {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
   .settings-sheet > section {
     grid-template-columns: 1fr;
     gap: 18px;
@@ -887,6 +1293,17 @@ onBeforeUnmount(() => unlistenDownload?.())
 }
 
 @container workspace (max-width: 780px) {
+  .settings-setup-overview {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-bottom: 22px;
+    padding: 15px;
+  }
+
+  .processing-mode-list {
+    grid-template-columns: 1fr;
+  }
+
   .settings-sheet > section {
     grid-template-columns: 1fr;
     gap: 16px;
@@ -925,7 +1342,7 @@ onBeforeUnmount(() => unlistenDownload?.())
 
 @container workspace (max-width: 520px) {
   .processing-mode {
-    grid-template-columns: 18px minmax(0, 1fr);
+    min-height: 0;
   }
 
   .mode-badge {
@@ -935,6 +1352,17 @@ onBeforeUnmount(() => unlistenDownload?.())
 
   .runtime-row {
     grid-template-columns: 1fr;
+  }
+
+  .asset-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .asset-section-heading > span {
+    max-width: 100%;
+    text-align: left;
   }
 
   .runtime-row > .installed,

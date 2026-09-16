@@ -20,6 +20,26 @@ fn default_openai_api_base() -> String {
     "https://api.openai.com/v1".to_string()
 }
 
+fn default_review_status() -> String {
+    "draft".to_string()
+}
+
+fn default_export_content() -> String {
+    "bilingual".to_string()
+}
+
+fn default_export_format() -> String {
+    "srt".to_string()
+}
+
+fn default_burn_video() -> bool {
+    true
+}
+
+fn default_sync_translated_style() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SubtitleSegment {
@@ -79,6 +99,39 @@ pub struct SubtitlePerformance {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SubtitleProjectWorkspace {
+    #[serde(default = "default_review_status")]
+    pub review_status: String,
+    #[serde(default)]
+    pub style: SubtitleStyle,
+    #[serde(default = "default_export_content")]
+    pub export_content: String,
+    #[serde(default = "default_export_format")]
+    pub export_format: String,
+    #[serde(default = "default_burn_video")]
+    pub burn_video: bool,
+    #[serde(default = "default_sync_translated_style")]
+    pub sync_translated_style: bool,
+    #[serde(default)]
+    pub output_dir: Option<String>,
+}
+
+impl Default for SubtitleProjectWorkspace {
+    fn default() -> Self {
+        Self {
+            review_status: default_review_status(),
+            style: SubtitleStyle::default(),
+            export_content: default_export_content(),
+            export_format: default_export_format(),
+            burn_video: default_burn_video(),
+            sync_translated_style: default_sync_translated_style(),
+            output_dir: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubtitleProject {
     pub id: String,
     pub title: String,
@@ -109,6 +162,8 @@ pub struct SubtitleProject {
     pub artifacts: Vec<SubtitleArtifact>,
     #[serde(default)]
     pub performance: SubtitlePerformance,
+    #[serde(default)]
+    pub workspace: SubtitleProjectWorkspace,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +186,8 @@ pub struct GeminiSettings {
     pub openai_api_base: String,
     #[serde(default)]
     pub openai_model: String,
+    #[serde(default)]
+    pub has_glm_api_key: bool,
 }
 
 impl Default for GeminiSettings {
@@ -147,6 +204,7 @@ impl Default for GeminiSettings {
             has_openai_api_key: false,
             openai_api_base: default_openai_api_base(),
             openai_model: String::new(),
+            has_glm_api_key: false,
         }
     }
 }
@@ -165,6 +223,16 @@ pub struct SaveGeminiSettingsRequest {
     pub openai_api_key: Option<String>,
     pub openai_api_base: String,
     pub openai_model: String,
+    #[serde(default)]
+    pub glm_api_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListOpenAiCompatibleModelsRequest {
+    pub api_base: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -249,6 +317,13 @@ pub struct StartWhisperTranscriptionRequest {
 pub struct SaveSegmentsRequest {
     pub project_id: String,
     pub segments: Vec<SubtitleSegment>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveSubtitleProjectWorkspaceRequest {
+    pub project_id: String,
+    pub workspace: SubtitleProjectWorkspace,
 }
 
 #[derive(Debug, Deserialize)]
@@ -553,6 +628,30 @@ mod tests {
         let project: SubtitleProject = serde_json::from_value(value).unwrap();
         assert!(project.performance.stages.is_empty());
         assert_eq!(project.performance.uploaded_bytes, 0);
+        assert_eq!(project.workspace.review_status, "draft");
+        assert_eq!(project.workspace.export_content, "bilingual");
+        assert_eq!(project.workspace.export_format, "srt");
+        assert!(project.workspace.burn_video);
+        assert!(project.workspace.sync_translated_style);
+    }
+
+    #[test]
+    fn old_settings_receive_default_glm_key_state() {
+        let value = serde_json::json!({
+            "hasApiKey": false,
+            "defaultModel": ECONOMY_MODEL,
+            "defaultTargetLanguage": "zh-CN",
+            "maxCostUsd": 2.0,
+            "maxConcurrency": 2,
+            "processingMode": "local_free",
+            "whisperModel": "large-v3-turbo-q5",
+            "whisperRuntime": "cpu",
+            "hasOpenaiApiKey": false,
+            "openaiApiBase": "https://api.openai.com/v1",
+            "openaiModel": ""
+        });
+        let settings: GeminiSettings = serde_json::from_value(value).unwrap();
+        assert!(!settings.has_glm_api_key);
     }
 
     #[test]

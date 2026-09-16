@@ -61,6 +61,13 @@ export type ParseVideoRequest = {
   options?: ParseOptions
 }
 
+export type ExtractSubtitlesRequest = {
+  url: string
+  dir: string
+  title: string
+  options?: ParseOptions
+}
+
 export type DownloadRequest = {
   url: string
   dir: string
@@ -70,7 +77,7 @@ export type DownloadRequest = {
 }
 
 export type DownloadProgressEvent = {
-  status: 'starting' | 'downloading' | 'processing' | 'finished' | 'cancelled' | 'error'
+  status: 'starting' | 'downloading' | 'processing' | 'finished' | 'cancelled' | 'error' | 'log'
   percent?: number | null
   total?: string | null
   speed?: string | null
@@ -124,6 +131,18 @@ export type SubtitleStyle = {
   translatedFirst: boolean
 }
 
+export type SubtitleExportFormat = 'srt' | 'vtt' | 'txt' | 'md'
+
+export type SubtitleProjectWorkspace = {
+  reviewStatus: 'draft' | 'reviewing' | 'approved'
+  style: SubtitleStyle
+  exportContent: SubtitleContentMode
+  exportFormat: SubtitleExportFormat
+  burnVideo: boolean
+  syncTranslatedStyle: boolean
+  outputDir?: string | null
+}
+
 export type SubtitleUsage = {
   inputTokens: number
   outputTokens: number
@@ -150,6 +169,7 @@ export type SubtitleProject = {
   translationProvider?: string | null
   artifacts: SubtitleArtifact[]
   performance: SubtitlePerformance
+  workspace: SubtitleProjectWorkspace
 }
 
 export type SubtitleStageRecord = {
@@ -182,12 +202,13 @@ export type GeminiSettings = {
   defaultTargetLanguage: string
   maxCostUsd: number
   maxConcurrency: 1 | 2
-  processingMode: 'local_free' | 'local_custom' | 'gemini'
+  processingMode: 'local_free' | 'local_custom' | 'glm' | 'gemini'
   whisperModel: string
   whisperRuntime: 'cpu' | 'cuda'
   hasOpenaiApiKey: boolean
   openaiApiBase: string
   openaiModel: string
+  hasGlmApiKey: boolean
 }
 
 export type CleanupRecord = {
