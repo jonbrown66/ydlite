@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#edf1f6" />
-    <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
+    <meta name="theme-color" content="#f7f7f8" />
+    <link rel="icon" type="image/svg+xml" href="/src/assets/brand-mark.svg" />
     <title>YDLite</title>
     <style>
       html,
@@ -13,7 +13,7 @@
         min-width: 100%;
         min-height: 100%;
         margin: 0;
-        background: #edf1f6;
+        background: #f7f7f8;
       }
 
       .startup-shell {
@@ -25,11 +25,11 @@
         inset: 0;
         z-index: 9999;
         display: grid;
-        grid-template-rows: 46px minmax(0, 1fr);
+        grid-template-rows: 48px minmax(0, 1fr);
         overflow: hidden;
-        background: #edf1f6;
-        color: #26313f;
-        font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+        background: #f7f7f8;
+        color: #202023;
+        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
         transition: opacity 140ms ease-out;
       }
 
@@ -38,47 +38,52 @@
         pointer-events: none;
       }
 
+      .startup-shell::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        box-shadow: inset 0 0 0 1px rgb(24 24 27 / 12%);
+      }
+
       .startup-titlebar {
         display: grid;
-        grid-template-columns: 184px minmax(0, 1fr) 138px;
+        grid-template-columns: 208px minmax(0, 1fr) 139px;
         align-items: center;
-        border-bottom: 1px solid #cfd7e1;
-        background: #f3f5f8;
+        border-bottom: 1px solid rgb(24 24 27 / 12%);
+        background: #ffffff;
       }
 
       .startup-brand {
         display: flex;
         align-items: center;
         align-self: stretch;
-        gap: 10px;
-        padding: 0 16px;
-        border-right: 1px solid #cfd7e1;
-        font-size: 13px;
-        font-weight: 700;
+        gap: 9px;
+        padding: 0 20px;
+        font-size: 14px;
+        font-weight: 600;
       }
 
       .startup-mark {
-        display: grid;
-        place-items: center;
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
-        background: #293440;
+        display: block;
+        width: 26px;
+        height: 26px;
+        flex-shrink: 0;
       }
 
-      .startup-mark::after {
-        width: 0;
-        height: 0;
-        margin-left: 2px;
-        border-top: 4px solid transparent;
-        border-bottom: 4px solid transparent;
-        border-left: 6px solid #f7f9fb;
-        content: "";
+      .startup-brand strong { font-weight: 600; }
+
+      .startup-mark img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
       }
 
       .startup-window-actions {
         display: grid;
         grid-template-columns: repeat(3, 46px);
+        border-left: 1px solid rgb(24 24 27 / 12%);
         align-self: stretch;
       }
 
@@ -91,82 +96,88 @@
       .startup-window-actions i::after {
         width: 10px;
         height: 1px;
-        background: #7d8793;
+        background: #626269;
         content: "";
       }
 
       .startup-window-actions i:nth-child(2)::after {
-        height: 9px;
-        border: 1px solid #7d8793;
+        box-sizing: border-box;
+        width: 10px;
+        height: 10px;
+        border: 1px solid #626269;
         background: transparent;
       }
 
       .startup-window-actions i:last-child::after {
-        width: 12px;
-        background: linear-gradient(45deg, transparent 46%, #7d8793 47% 53%, transparent 54%),
-          linear-gradient(-45deg, transparent 46%, #7d8793 47% 53%, transparent 54%);
+        width: 1px;
+        height: 13px;
+        transform: rotate(45deg);
+      }
+
+      .startup-window-actions i:last-child::before {
+        position: absolute;
+        width: 1px;
+        height: 13px;
+        background: #626269;
+        transform: rotate(-45deg);
+        content: "";
       }
 
       .startup-body {
         display: grid;
-        grid-template-columns: 184px minmax(0, 1fr);
+        grid-template-columns: 208px minmax(0, 1fr);
         min-height: 0;
       }
 
       .startup-sidebar {
-        padding: 16px 10px;
-        border-right: 1px solid #cfd7e1;
-        background: #e8edf3;
+        padding: 51px 12px 12px;
+        border-right: 1px solid rgb(24 24 27 / 12%);
+        background: #fafafa;
       }
 
       .startup-nav {
         display: grid;
-        gap: 10px;
+        gap: 4px;
       }
 
       .startup-nav i {
         display: block;
         width: 100%;
-        height: 34px;
-        border-radius: 6px;
-        background: #dce3eb;
+        height: 36px;
+        border-radius: 7px;
+        background: #f0f0f2;
       }
 
       .startup-nav i:first-child {
-        background: #d6e6f7;
+        background: #ffffff;
+        box-shadow: 0 0 0 1px rgb(24 24 27 / 12%), 0 1px 2px rgb(24 24 27 / 5%);
       }
 
       .startup-content {
-        width: min(960px, calc(100% - 64px));
+        width: min(1040px, calc(100% - 56px));
         margin: 0 auto;
-        padding-top: 34px;
+        padding-top: 24px;
       }
 
       .startup-line,
       .startup-input {
-        background: #dce3eb;
+        background: #e4e4e7;
         animation: startup-pulse 1.1s ease-in-out infinite alternate;
       }
 
       .startup-line {
         width: 116px;
-        height: 24px;
+        height: 31px;
         border-radius: 5px;
-      }
-
-      .startup-line.short {
-        width: 220px;
-        height: 10px;
-        margin-top: 10px;
       }
 
       .startup-input {
         width: 100%;
-        height: 58px;
-        margin-top: 26px;
-        border: 1px solid #c5cfda;
-        border-radius: 10px;
-        background: #f7f9fb;
+        height: 44px;
+        margin-top: 24px;
+        border: 1px solid rgb(24 24 27 / 12%);
+        border-radius: 12px;
+        background: #ffffff;
       }
 
       @keyframes startup-pulse {
@@ -176,7 +187,7 @@
 
       @media (max-width: 860px) {
         .startup-titlebar {
-          grid-template-columns: 64px minmax(0, 1fr) 138px;
+          grid-template-columns: 56px minmax(0, 1fr) 139px;
         }
 
         .startup-brand {
@@ -189,7 +200,7 @@
         }
 
         .startup-body {
-          grid-template-columns: 64px minmax(0, 1fr);
+          grid-template-columns: 56px minmax(0, 1fr);
         }
 
         .startup-sidebar {
@@ -214,7 +225,7 @@
     <div class="startup-shell" aria-hidden="true">
       <header class="startup-titlebar" data-tauri-drag-region>
         <div class="startup-brand" data-tauri-drag-region>
-          <span class="startup-mark"></span>
+          <span class="startup-mark" data-tauri-drag-region><img src="/src/assets/brand-mark.svg" width="26" height="26" alt="" draggable="false" /></span>
           <strong>YDLite</strong>
         </div>
         <div data-tauri-drag-region></div>
@@ -226,7 +237,6 @@
         </aside>
         <main class="startup-content">
           <div class="startup-line"></div>
-          <div class="startup-line short"></div>
           <div class="startup-input"></div>
         </main>
       </div>

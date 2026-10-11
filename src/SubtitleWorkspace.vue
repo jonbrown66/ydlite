@@ -5,8 +5,11 @@ import checkIcon from 'iconoir/icons/check.svg?url'
 import folderIcon from 'iconoir/icons/folder.svg?url'
 import mediaVideoIcon from 'iconoir/icons/media-video.svg?url'
 import pageIcon from 'iconoir/icons/empty-page.svg?url'
-import settingsIcon from 'iconoir/icons/settings.svg?url'
 import AppSelect from './components/ui/select/AppSelect.vue'
+import { modelDescription, runtimeDescription, runtimeName } from '@/lib/assetLabels'
+import PageHeader from './components/ui/PageHeader.vue'
+import DisclosureChevron from './components/ui/DisclosureChevron.vue'
+import AppCollapsible from './components/ui/AppCollapsible.vue'
 import {
   analyzeSubtitleSource,
   burnSubtitles,
@@ -87,6 +90,7 @@ type ReadinessCard = {
 
 const subtitleStyleStorageKey = 'ydlite.subtitle-style.v1'
 const showAdvanced = ref(false)
+const outputSettingsConfigured = ref(false)
 const stylePreset = ref<SubtitlePreset>('classic')
 const contentMode = ref<SubtitleContentMode>('bilingual')
 const syncTranslatedStyle = ref(true)
@@ -110,30 +114,50 @@ const subtitleStyle = ref<SubtitleStyle>({
 })
 
 const subtitlePresets: Array<{ id: Exclude<SubtitlePreset, 'custom'>; name: string; note: string; color: string; boxed: boolean }> = [
-  { id: 'classic', name: '经典白字', note: '清晰描边', color: '#F8F8F8', boxed: false },
-  { id: 'contrast', name: '高对比', note: '半透明底', color: '#F8F8F8', boxed: true },
-  { id: 'yellow', name: '黄色强调', note: '教程短视频', color: '#FFD95A', boxed: false },
+  { id: 'classic', name: 'Classic', note: 'Outlined', color: '#F8F8F8', boxed: false },
+  { id: 'contrast', name: 'Contrast', note: 'Background', color: '#F8F8F8', boxed: true },
+  { id: 'yellow', name: 'Yellow', note: 'Accent', color: '#FFD95A', boxed: false },
 ]
 const contentOptions = [
-  { value: 'source', label: '仅源字幕' },
-  { value: 'translated', label: '仅翻译字幕' },
-  { value: 'bilingual', label: '双语字幕' },
+  { value: 'source', label: 'Source only' },
+  { value: 'translated', label: 'Translated only' },
+  { value: 'bilingual', label: 'Bilingual subtitles' },
 ]
 const fontOptions = [
-  { value: 'Microsoft YaHei', label: '微软雅黑' },
-  { value: 'Microsoft YaHei UI', label: '微软雅黑 UI' },
-  { value: 'SimHei', label: '黑体' },
-  { value: 'SimSun', label: '宋体' },
+  { value: 'Microsoft YaHei', label: 'Microsoft YaHei' },
+  { value: 'Microsoft YaHei UI', label: 'Microsoft YaHei UI' },
+  { value: 'SimHei', label: 'SimHei' },
+  { value: 'SimSun', label: 'SimSun' },
   { value: 'Segoe UI', label: 'Segoe UI' },
 ]
 const positionOptions = [
-  { value: 'bottom', label: '底部' },
-  { value: 'middle', label: '居中' },
-  { value: 'top', label: '顶部' },
+  { value: 'bottom', label: 'Bottom' },
+  { value: 'middle', label: 'Center' },
+  { value: 'top', label: 'Top' },
 ]
 const availableContentOptions = computed(() =>
   analysis.value?.strategy === 'extract_chinese' ? contentOptions.slice(0, 1) : contentOptions,
 )
+const outputSummary = computed(() => {
+  const mode = analysis.value?.strategy === 'extract_chinese' ? 'source' : outputSettingsConfigured.value ? contentMode.value : 'bilingual'
+  const label = mode === 'source' ? 'Source subtitles' : mode === 'translated' ? 'Chinese subtitles' : 'Bilingual subtitles'
+  return `${label}${!outputSettingsConfigured.value || burnVideo.value ? ' + video' : ' only'}`
+})
+function toggleOutputSettings() {
+  showAdvanced.value = !showAdvanced.value
+  outputSettingsConfigured.value = true
+  if (analysis.value?.strategy === 'extract_chinese') contentMode.value = 'source'
+}
+async function handlePresetKey(event: KeyboardEvent) {
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const buttons = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]'))
+  const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (current + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + buttons.length) % buttons.length
+  applyPreset(subtitlePresets[next].id)
+  await nextTick()
+  buttons[next]?.focus()
+}
 const analyzing = ref(false)
 const processing = ref(false)
 const progress = ref<SubtitleProgressEvent | null>(null)
@@ -189,46 +213,46 @@ const canGenerate = computed(() =>
   ),
 )
 const actionLabel = computed(() => {
-  if (!analysis.value) return '选择视频'
-  if (processing.value) return '正在自动生成…'
-  return '开始自动字幕'
+  if (!analysis.value) return 'Choose video'
+  if (processing.value) return 'Generating…'
+  return 'Generate subtitles'
 })
 const stageLabel = computed(() => {
   if (!progress.value) return ''
-  if (progress.value.stage === 'rate_limited' && progress.value.message) {
-    return progress.value.message
-  }
   const labels: Record<string, string> = {
-    extracting: '正在识别语音',
-    uploading: '正在识别语音',
-    transcribing: '正在识别语音',
-    whisper_transcription: '正在识别语音',
-    bing_translation: '正在翻译字幕',
-    custom_ai_translation: '正在翻译字幕',
-    translate: '正在翻译字幕',
-    polish: '正在自动校对',
-    exporting: '正在生成结果',
-    burning: '正在生成结果',
-    completed: '处理完成',
+    extracting: 'Transcribing…',
+    uploading: 'Transcribing…',
+    transcribing: 'Transcribing…',
+    whisper_transcription: 'Transcribing…',
+    bing_translation: 'Translating…',
+    custom_ai_translation: 'Translating…',
+    translate: 'Translating…',
+    polish: 'Reviewing…',
+    exporting: 'Exporting…',
+    burning: 'Exporting…',
+    completed: 'Completed',
+    rate_limited: 'Waiting for service…',
   }
-  return labels[progress.value.stage] ?? '正在自动处理'
+  return labels[progress.value.stage] ?? 'Processing…'
 })
 const automationFlowLabel = computed(() =>
   analysis.value?.strategy === 'extract_chinese'
-    ? '提取字幕 → 生成结果'
-    : '识别语音 → 翻译 → 生成结果',
+    ? 'Extract → Export'
+    : analysis.value?.strategy === 'translate_subtitle'
+      ? 'Extract → Translate → Export'
+      : 'Transcribe → Translate → Export',
 )
 const processingPlan = computed(() => {
-  if (!analysis.value) return '等待视频'
-  if (analysis.value.strategy === 'extract_chinese') return '直接提取'
+  if (!analysis.value) return 'Choose a video'
+  if (analysis.value.strategy === 'extract_chinese') return 'Extract subtitles'
   if (settings.value.processingMode === 'local_custom') {
-    return analysis.value.strategy === 'translate_subtitle' ? '自定义 AI 翻译' : 'Whisper + 自定义 AI'
+    return analysis.value.strategy === 'translate_subtitle' ? 'Custom AI' : 'Whisper + Custom AI'
   }
-  return analysis.value.strategy === 'translate_subtitle' ? '必应翻译' : 'Whisper + 必应'
+  return analysis.value.strategy === 'translate_subtitle' ? 'Bing Translate' : 'Whisper + Bing'
 })
 const processingTimeEstimate = computed(() => {
   if (!analysis.value) return ''
-  if (analysis.value.strategy === 'extract_chinese') return '预计不到 1 分钟'
+  if (analysis.value.strategy === 'extract_chinese') return 'Less than 1 min'
   const durationMinutes = Math.max(1, analysis.value.durationMs / 60_000)
   let low = 0.5
   let high = 2
@@ -245,46 +269,46 @@ const processingTimeEstimate = computed(() => {
     low += durationMinutes * 0.35
     high += durationMinutes * 0.8
   }
-  return `预计 ${Math.max(1, Math.ceil(low))}–${Math.max(2, Math.ceil(high))} 分钟`
+  return `Estimated ${Math.max(1, Math.ceil(low))}–${Math.max(2, Math.ceil(high))} min`
 })
 const outputHeading = computed(() =>
-  videoOutput.value || (!burnVideo.value && subtitleOutput.value) ? '处理完成' : '字幕已生成',
+  videoOutput.value || (!burnVideo.value && subtitleOutput.value) ? 'Completed' : 'Subtitles ready',
 )
 const generateHint = computed(() => {
   if (!analysis.value) return ''
-  if (needsCustomAi.value && (!settings.value.hasOpenaiApiKey || !settings.value.openaiModel)) return '请先配置自定义 AI'
-  if (needsLocalAssets.value && !localModelReady.value) return '请先下载本地模型'
-  if (needsLocalAssets.value && !localRuntimeReady.value) return '请先下载运行组件'
+  if (needsCustomAi.value && (!settings.value.hasOpenaiApiKey || !settings.value.openaiModel)) return 'Configure your AI provider'
+  if (needsLocalAssets.value && !localModelReady.value) return 'Install a speech model'
+  if (needsLocalAssets.value && !localRuntimeReady.value) return 'Install a runtime'
   return ''
 })
 const readinessCard = computed<ReadinessCard | null>(() => {
   if (!analysis.value || canGenerate.value || processing.value || analyzing.value) return null
   if (needsCustomAi.value && (!settings.value.hasOpenaiApiKey || !settings.value.openaiModel)) {
     return {
-      title: '需要配置自定义 AI',
-      description: '填写 API 地址、模型名称和 Key 后，才会使用你的翻译服务。',
+      title: 'AI provider required',
+      description: 'Add your endpoint, model and API key.',
       action: 'open-settings',
-      actionLabel: '配置自定义 AI',
+      actionLabel: 'Configure provider',
       setup: 'custom',
     }
   }
   if (needsLocalAssets.value && !localModelReady.value) {
     const model = selectedWhisperModel.value
     return {
-      title: `需要下载 ${model?.name ?? 'Whisper 模型'}`,
-      description: model ? `${model.description} ${model.downloadSize}，只会下载这一个模型。` : '模型仅保存在本机，不会自动下载。',
+      title: `Install ${model?.name ?? 'Whisper model'}`,
+      description: model ? `${modelDescription(model.id)} ${model.downloadSize}.` : 'Install a local speech model to continue.',
       action: 'install-model',
-      actionLabel: preparingAsset.value === 'model' ? '正在下载…' : `下载${model ? ` ${model.downloadSize}` : ''}`,
+      actionLabel: preparingAsset.value === 'model' ? 'Downloading…' : `Download${model ? ` ${model.downloadSize}` : ''}`,
       setup: 'local',
     }
   }
   if (needsLocalAssets.value && !localRuntimeReady.value) {
     const runtime = selectedWhisperRuntime.value
     return {
-      title: `需要安装 ${runtime?.name ?? 'Whisper 运行组件'}`,
-      description: runtime ? `${runtime.description} ${runtime.downloadSize}，仅用于本机语音识别。` : '运行组件仅在开始本地识别前安装。',
+      title: `Install ${runtime ? runtimeName(runtime.id) : 'Whisper runtime'}`,
+      description: runtime ? `${runtimeDescription(runtime.id)} ${runtime.downloadSize}.` : 'Install a runtime for local transcription.',
       action: 'install-runtime',
-      actionLabel: preparingAsset.value === 'runtime' ? '正在安装…' : `安装${runtime ? ` ${runtime.downloadSize}` : ''}`,
+      actionLabel: preparingAsset.value === 'runtime' ? 'Installing…' : `Install${runtime ? ` ${runtime.downloadSize}` : ''}`,
       setup: 'local',
     }
   }
@@ -329,12 +353,12 @@ const hasUnsavedSegments = computed(() =>
 )
 const projectStatusText = computed(() => {
   const status = project.value?.status
-  if (status === 'paused') return '任务已暂停，可继续处理'
-  if (status === 'failed') return '上次处理失败，可重试'
-  if (status === 'processing' || status === 'translate' || status === 'burning') return '项目正在处理'
-  if (hasUnsavedSegments.value) return '有未保存的字幕修改'
-  if (reviewStatus.value === 'approved') return '已确认，可交付'
-  return hasProjectSegments.value ? '待校对' : '等待生成字幕'
+  if (status === 'paused') return 'Paused. Ready to resume.'
+  if (status === 'failed') return 'Failed. Ready to retry.'
+  if (status === 'processing' || status === 'translate' || status === 'burning') return 'Processing project…'
+  if (hasUnsavedSegments.value) return 'Unsaved subtitle changes'
+  if (reviewStatus.value === 'approved') return 'Approved'
+  return hasProjectSegments.value ? 'Needs review' : 'Ready to generate'
 })
 const qaIssues = computed<QaIssue[]>(() => {
   const segments = project.value?.segments ?? []
@@ -348,19 +372,19 @@ const qaIssues = computed<QaIssue[]>(() => {
     const duration = segment.endMs - segment.startMs
 
     if (!source) {
-      issues.push({ segmentId: segment.id, severity: 'error', message: `第 ${index + 1} 条缺少原文` })
+      issues.push({ segmentId: segment.id, severity: 'error', message: `Segment ${index + 1}: missing source text` })
     }
     if (segment.endMs <= segment.startMs) {
-      issues.push({ segmentId: segment.id, severity: 'error', message: `第 ${index + 1} 条时间无效` })
+      issues.push({ segmentId: segment.id, severity: 'error', message: `Segment ${index + 1}: invalid timing` })
     }
     if (index > 0 && segment.startMs < previousEnd) {
-      issues.push({ segmentId: segment.id, severity: 'error', message: `第 ${index + 1} 条与上一条重叠` })
+      issues.push({ segmentId: segment.id, severity: 'error', message: `Segment ${index + 1}: overlaps previous segment` })
     }
     if (requireTranslation && !translated) {
-      issues.push({ segmentId: segment.id, severity: 'error', message: `第 ${index + 1} 条缺少译文` })
+      issues.push({ segmentId: segment.id, severity: 'error', message: `Segment ${index + 1}: missing translation` })
     }
     if (duration > 0 && duration < 650) {
-      issues.push({ segmentId: segment.id, severity: 'warning', message: `第 ${index + 1} 条停留不足 0.65 秒` })
+      issues.push({ segmentId: segment.id, severity: 'warning', message: `Segment ${index + 1}: duration below 0.65 s` })
     }
 
     const visibleText = contentMode.value === 'source'
@@ -371,10 +395,10 @@ const qaIssues = computed<QaIssue[]>(() => {
     const characterCount = visibleText.replace(/\s/g, '').length
     const seconds = Math.max(duration / 1_000, 0.1)
     if (characterCount / seconds > 16) {
-      issues.push({ segmentId: segment.id, severity: 'warning', message: `第 ${index + 1} 条阅读速度偏快` })
+      issues.push({ segmentId: segment.id, severity: 'warning', message: `Segment ${index + 1}: reading speed too fast` })
     }
     if (visibleText.split('\n').length > 2 || characterCount > 42) {
-      issues.push({ segmentId: segment.id, severity: 'warning', message: `第 ${index + 1} 条文字较长，建议断句` })
+      issues.push({ segmentId: segment.id, severity: 'warning', message: `Segment ${index + 1}: consider a line break` })
     }
     previousEnd = Math.max(previousEnd, segment.endMs)
   }
@@ -433,7 +457,7 @@ function parentDirectory(path: string) {
 
 function sourceFileStem(path: string) {
   const filename = path.slice(Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')) + 1)
-  return filename.replace(/\.[^./\\]+$/, '') || '字幕项目'
+  return filename.replace(/\.[^./\\]+$/, '') || 'Subtitle projects'
 }
 
 function joinOutputPath(directory: string, filename: string) {
@@ -482,7 +506,7 @@ async function persistWorkspace(quiet = false) {
   try {
     const saved = await saveSubtitleProjectWorkspace(project.value.id, workspacePayload())
     project.value = saved
-    if (!quiet) notice.value = '项目设置已保存。'
+    if (!quiet) notice.value = 'Project saved.'
   } catch (value) {
     error.value = errorText(value)
   } finally {
@@ -526,7 +550,7 @@ async function saveSegmentEdits(quiet = false) {
     lastSavedSegments.value = segmentSignature(saved.segments)
     if (reviewStatus.value === 'draft') reviewStatus.value = 'reviewing'
     scheduleWorkspaceSave()
-    if (!quiet) editorNotice.value = '字幕修改已保存。'
+    if (!quiet) editorNotice.value = 'Subtitles saved.'
     return true
   } catch (value) {
     editorError.value = errorText(value)
@@ -588,7 +612,7 @@ function updateSegmentTime(segmentId: string, field: 'startMs' | 'endMs', event:
   if (!project.value) return
   const value = parseTimestamp((event.target as HTMLInputElement).value)
   if (value === null) {
-    editorError.value = '时间请使用 00:00:00.000 格式。'
+    editorError.value = 'Use the time format 00:00:00.000.'
     return
   }
   const index = project.value.segments.findIndex(segment => segment.id === segmentId)
@@ -602,7 +626,7 @@ function splitText(value: string) {
   const trimmed = value.trim()
   if (trimmed.length < 2) return [trimmed, ''] as const
   const middle = Math.floor(trimmed.length / 2)
-  const punctuation = /[，。！？、,.!?;；\s]/g
+  const punctuation = /[，.！？、,.!?;；\s]/g
   let best = middle
   let distance = Number.POSITIVE_INFINITY
   for (const match of trimmed.matchAll(punctuation)) {
@@ -625,7 +649,7 @@ function splitSelectedSegment() {
   )
   const [firstSource, secondSource] = splitText(selected.sourceText)
   if (!firstSource || !secondSource || cut <= selected.startMs || cut >= selected.endMs) {
-    editorError.value = '当前字幕无法在这里拆分，请先补充文本或调整播放位置。'
+    editorError.value = 'Add text or adjust the playhead before splitting.'
     return
   }
   const [firstTranslated, secondTranslated] = splitText(selected.translatedText ?? '')
@@ -655,7 +679,7 @@ function mergeSelectedWithNext() {
   const index = project.value.segments.findIndex(segment => segment.id === selectedSegment.value?.id)
   const next = project.value.segments[index + 1]
   if (!next) {
-    editorError.value = '已经是最后一条字幕，无法继续合并。'
+    editorError.value = 'No next segment to merge.'
     return
   }
   rememberSegments()
@@ -679,15 +703,15 @@ function insertSegmentAfterSelected() {
   const latestEnd = next?.startMs ?? project.value.durationMs
   const endMs = Math.min(latestEnd, startMs + 1_500)
   if (endMs - startMs < 250) {
-    editorError.value = '相邻字幕之间没有足够的空白时间，请先调整时间轴。'
+    editorError.value = 'Adjust segment timing to create space.'
     return
   }
   const segment: SubtitleSegment = {
     id: `manual-${Date.now()}`,
     startMs,
     endMs,
-    sourceText: '请输入字幕原文',
-    translatedText: contentMode.value === 'source' ? null : '请输入字幕译文',
+    sourceText: 'Enter source text',
+    translatedText: contentMode.value === 'source' ? null : 'Enter translation',
   }
   rememberSegments()
   const segments = cloneSegments(project.value.segments)
@@ -709,7 +733,7 @@ function replaceTextAcrossSegments() {
   if (!project.value) return
   const search = segmentQuery.value
   if (!search) {
-    editorError.value = '请先输入要查找的文本。'
+    editorError.value = 'Enter text to find.'
     return
   }
   let changed = 0
@@ -723,12 +747,12 @@ function replaceTextAcrossSegments() {
     return { ...segment, sourceText, translatedText }
   })
   if (!changed) {
-    editorNotice.value = '没有匹配到可替换的字幕文本。'
+    editorNotice.value = 'No matching text.'
     return
   }
   rememberSegments()
   replaceSegments(segments)
-  editorNotice.value = `已替换 ${changed} 条字幕。`
+  editorNotice.value = `Replaced text in ${changed} segments.`
 }
 
 function seekToSegment(segment: SubtitleSegment) {
@@ -783,7 +807,7 @@ async function exportCurrentSubtitles() {
   editorError.value = ''
   editorNotice.value = ''
   if (qaErrors.value.length) {
-    editorError.value = '请先处理质检中的错误，再导出字幕。'
+    editorError.value = 'Resolve review errors before exporting.'
     return
   }
   if (!await saveSegmentEdits(true)) return
@@ -793,7 +817,7 @@ async function exportCurrentSubtitles() {
   activity.beginSubtitle({
     projectId: taskProject.id,
     title: subtitleTaskTitle(taskProject),
-    detail: `正在导出 ${exportFormat.value.toUpperCase()} 字幕`,
+    detail: `Exporting ${exportFormat.value.toUpperCase()} subtitles…`,
   })
   exporting.value = true
   try {
@@ -807,11 +831,11 @@ async function exportCurrentSubtitles() {
     project.value = refreshed
     project.value.workspace.outputDir = parentDirectory(destination) || project.value.workspace.outputDir
     synchronizeProject(await saveSubtitleProjectWorkspace(project.value.id, workspacePayload()))
-    editorNotice.value = '字幕文件已导出。'
-    activity.finishSubtitle(taskProject.id, { detail: `${exportFormat.value.toUpperCase()} 字幕已导出` })
+    editorNotice.value = 'Subtitles exported.'
+    activity.finishSubtitle(taskProject.id, { detail: `${exportFormat.value.toUpperCase()} subtitles exported` })
   } catch (value) {
     editorError.value = errorText(value)
-    activity.finishSubtitle(taskProject.id, { state: taskFailureState(value), detail: '字幕导出未完成' })
+    activity.finishSubtitle(taskProject.id, { state: taskFailureState(value), detail: 'Subtitle export failed' })
   } finally {
     exporting.value = false
   }
@@ -822,7 +846,7 @@ async function burnCurrentVideo() {
   editorError.value = ''
   editorNotice.value = ''
   if (qaErrors.value.length) {
-    editorError.value = '请先处理质检中的错误，再生成字幕视频。'
+    editorError.value = 'Resolve review errors before creating the video.'
     return
   }
   if (!await saveSegmentEdits(true)) return
@@ -832,7 +856,7 @@ async function burnCurrentVideo() {
   activity.beginSubtitle({
     projectId: taskProject.id,
     title: subtitleTaskTitle(taskProject),
-    detail: '正在生成字幕视频',
+    detail: 'Rendering video…',
   })
   exporting.value = true
   try {
@@ -846,11 +870,11 @@ async function burnCurrentVideo() {
     project.value = refreshed
     project.value.workspace.outputDir = parentDirectory(destination) || project.value.workspace.outputDir
     synchronizeProject(await saveSubtitleProjectWorkspace(project.value.id, workspacePayload()))
-    editorNotice.value = '带字幕视频已生成。'
-    activity.finishSubtitle(taskProject.id, { detail: '字幕视频已生成' })
+    editorNotice.value = 'Video ready.'
+    activity.finishSubtitle(taskProject.id, { detail: 'Video ready' })
   } catch (value) {
     editorError.value = errorText(value)
-    activity.finishSubtitle(taskProject.id, { state: taskFailureState(value), detail: '字幕视频未生成' })
+    activity.finishSubtitle(taskProject.id, { state: taskFailureState(value), detail: 'Video export failed' })
   } finally {
     exporting.value = false
   }
@@ -883,14 +907,14 @@ async function continueProject() {
   const needsTranslation = projectNeedsTranslation()
   const hasTranslations = project.value.segments.every(segment => segment.translatedText?.trim())
   if (!needsTranslation || hasTranslations) {
-    notice.value = '字幕已具备继续处理的条件。'
+    notice.value = 'Ready to resume.'
     return
   }
   const taskProject = project.value
   activity.beginSubtitle({
     projectId: taskProject.id,
     title: subtitleTaskTitle(taskProject),
-    detail: '正在继续处理字幕',
+    detail: 'Resuming subtitles…',
   })
   processing.value = true
   error.value = ''
@@ -900,11 +924,11 @@ async function continueProject() {
       current = await translateProject(current.id, current.targetLanguage ?? 'zh-CN')
     }
     synchronizeProject(current)
-    notice.value = '字幕已继续处理完成。'
-    activity.finishSubtitle(taskProject.id, { detail: '字幕已继续处理完成' })
+    notice.value = 'Subtitles completed.'
+    activity.finishSubtitle(taskProject.id, { detail: 'Subtitles completed' })
   } catch (value) {
     error.value = errorText(value)
-    activity.finishSubtitle(taskProject.id, { state: taskFailureState(value), detail: '继续处理未完成' })
+    activity.finishSubtitle(taskProject.id, { state: taskFailureState(value), detail: 'Unable to resume' })
   } finally {
     processing.value = false
   }
@@ -979,14 +1003,14 @@ async function prepareRequiredAsset(action: Extract<ReadinessAction, 'install-mo
   if (action === 'install-model') {
     const model = selectedWhisperModel.value
     if (!model) {
-      error.value = '未找到当前选择的 Whisper 模型，请到设置中重新选择。'
+      error.value = 'Speech model unavailable. Choose another in Settings.'
       return
     }
     preparingAsset.value = 'model'
     try {
       await downloadWhisperModel(model.id)
       await refreshLocalAssets()
-      notice.value = `${model.name} 已准备好，可以开始自动字幕。`
+      notice.value = `${model.name} is ready.`
     } catch (value) {
       error.value = errorText(value)
     } finally {
@@ -997,14 +1021,14 @@ async function prepareRequiredAsset(action: Extract<ReadinessAction, 'install-mo
 
   const runtime = selectedWhisperRuntime.value
   if (!runtime) {
-    error.value = '未找到当前选择的 Whisper 运行组件，请到设置中重新选择。'
+    error.value = 'Runtime unavailable. Choose another in Settings.'
     return
   }
   preparingAsset.value = 'runtime'
   try {
     await downloadWhisperRuntime(runtime.id)
     await refreshLocalAssets()
-    notice.value = `${runtime.name} 已准备好，可以开始自动字幕。`
+    notice.value = `${runtimeName(runtime.id)} is ready.`
   } catch (value) {
     error.value = errorText(value)
   } finally {
@@ -1033,7 +1057,7 @@ const durationLabel = computed(() => {
   const seconds = Math.floor((analysis.value?.durationMs ?? 0) / 1000)
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
-  return hours ? `${hours} 小时 ${minutes} 分钟` : `${minutes || 1} 分钟`
+  return hours ? `${hours} hr ${minutes} min` : `${minutes || 1} min`
 })
 
 function errorText(value: unknown) {
@@ -1061,16 +1085,17 @@ function outputPath(extension: string) {
 function languageName(code?: string | null) {
   const value = code?.toLowerCase() ?? ''
   const names: Record<string, string> = {
-    zh: '中文', zho: '中文', chi: '中文', cmn: '中文', 'zh-cn': '中文',
-    en: '英文', eng: '英文', ja: '日文', jpn: '日文', ko: '韩文', kor: '韩文',
-    fr: '法文', fra: '法文', fre: '法文', de: '德文', deu: '德文', ger: '德文',
-    es: '西班牙文', spa: '西班牙文', ru: '俄文', rus: '俄文',
+    zh: 'Chinese', zho: 'Chinese', chi: 'Chinese', cmn: 'Chinese', 'zh-cn': 'Chinese',
+    en: 'English', eng: 'English', ja: 'Japanese', jpn: 'Japanese', ko: 'Korean', kor: 'Korean',
+    fr: 'French', fra: 'French', fre: 'French', de: 'German', deu: 'German', ger: 'German',
+    es: 'Spanish', spa: 'Spanish', ru: 'Russian', rus: 'Russian',
   }
-  return names[value] ?? (value && value !== 'und' ? value.toUpperCase() : '自动识别')
+  return names[value] ?? (value && value !== 'und' ? value.toUpperCase() : 'Auto-detect')
 }
 
 async function chooseProject(projectId: string) {
   showAdvanced.value = false
+  outputSettingsConfigured.value = false
   analyzing.value = true
   error.value = ''
   notice.value = ''
@@ -1084,7 +1109,7 @@ async function chooseProject(projectId: string) {
       analysis.value = await analyzeSubtitleSource(existing.sourcePath)
     } catch (value) {
       analysis.value = null
-      notice.value = `项目已打开，但无法重新分析源视频：${errorText(value)}`
+      notice.value = `Project opened. Unable to analyze source: ${errorText(value)}`
     }
   } catch (value) {
     error.value = errorText(value)
@@ -1098,6 +1123,7 @@ async function chooseVideo(path?: string) {
   const selected = path ?? await selectMediaFile()
   if (!selected) return
   showAdvanced.value = false
+  outputSettingsConfigured.value = false
   sourcePath.value = selected
   analysis.value = null
   project.value = null
@@ -1147,10 +1173,10 @@ async function generateChineseSubtitles() {
   try {
     const automaticContent = analysis.value.strategy === 'extract_chinese'
       ? 'source'
-      : showAdvanced.value
+      : outputSettingsConfigured.value
         ? contentMode.value
         : 'bilingual'
-    const automaticBurn = showAdvanced.value ? burnVideo.value : true
+    const automaticBurn = outputSettingsConfigured.value ? burnVideo.value : true
     contentMode.value = automaticContent
     burnVideo.value = automaticBurn
     let current = await ensureProject()
@@ -1158,7 +1184,7 @@ async function generateChineseSubtitles() {
     activity.beginSubtitle({
       projectId: current.id,
       title: subtitleTaskTitle(current),
-      detail: '正在生成自动字幕',
+      detail: 'Generating subtitles…',
     })
     const track = analysis.value.recommendedTrack
     if (track) {
@@ -1199,10 +1225,10 @@ async function generateChineseSubtitles() {
     synchronizeProject((await listSubtitleProjects()).find(item => item.id === current.id) ?? current)
     await persistWorkspace(true)
     notice.value = automaticBurn
-      ? '中文字幕和带字幕视频都已生成。'
-      : '中文字幕文件已生成。'
+      ? 'Subtitles and video ready.'
+      : 'Subtitles ready.'
     activity.finishSubtitle(current.id, {
-      detail: automaticBurn ? '中文字幕和字幕视频已生成' : '中文字幕已生成',
+      detail: automaticBurn ? 'Subtitles and video ready' : 'Subtitles ready',
     })
     await nextTick()
     resultPanel.value?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' })
@@ -1211,7 +1237,7 @@ async function generateChineseSubtitles() {
     if (activityProjectId) {
       activity.finishSubtitle(activityProjectId, {
         state: taskFailureState(value),
-        detail: '自动字幕未完成',
+        detail: 'Subtitle generation failed',
       })
     }
   } finally {
@@ -1221,7 +1247,7 @@ async function generateChineseSubtitles() {
 
 async function cancel() {
   if (!project.value) return
-  activity.updateSubtitle(project.value.id, { detail: '正在取消字幕任务…' })
+  activity.updateSubtitle(project.value.id, { detail: 'Cancelling…' })
   await cancelSubtitleTask(project.value.id)
 }
 
@@ -1280,227 +1306,216 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="simple-subtitle">
-    <header class="simple-header">
-      <div>
-        <h1>自动字幕</h1>
-        <p>选择视频后，自动识别、翻译、校对并生成结果。</p>
-      </div>
-      <button class="settings-button" type="button" @click="router.push({ name: 'settings' })">
-        <i class="icon" :style="iconStyle(settingsIcon)" />
-        设置
-      </button>
-    </header>
+    <PageHeader title="Subtitles" />
 
     <div class="subtitle-layout">
       <main class="source-column">
         <div class="section-caption">
           <div>
-            <strong>视频来源</strong>
+            <strong>Video</strong>
           </div>
         </div>
 
-        <button class="file-card" type="button" :disabled="analyzing || processing" @click="chooseVideo()">
+        <button class="file-card" :class="{ 'has-source': sourcePath }" type="button" :disabled="analyzing || processing" @click="chooseVideo()">
           <span class="file-icon"><i class="icon" :style="iconStyle(mediaVideoIcon)" /></span>
           <span class="file-copy">
-            <strong>{{ sourcePath ? sourcePath.replace(/^.*[\\/]/, '') : '选择一个视频' }}</strong>
-            <small>{{ sourcePath || '支持 MP4、MKV、MOV、WebM 等常见格式' }}</small>
+            <strong :title="sourcePath">{{ sourcePath ? sourcePath.replace(/^.*[\\/]/, '') : 'Choose a video' }}</strong>
           </span>
-          <span class="replace-label">{{ sourcePath ? '更换视频' : '浏览文件' }}</span>
+          <span class="replace-label">{{ sourcePath ? 'Replace' : 'Browse' }}</span>
         </button>
 
         <div v-if="analyzing" class="analysis-card loading">
           <i />
-          <div><strong>正在检查视频</strong><span>分析音轨、字幕轨道和语言信息…</span></div>
+          <div><strong>Analyzing video…</strong></div>
         </div>
 
         <div v-else-if="analysis" class="analysis-card">
           <span class="result-mark" :class="analysis.strategy"><i class="icon" :style="iconStyle(checkIcon)" /></span>
           <div class="analysis-copy">
-            <strong>{{ analysis.recommendedTrack ? '发现可用字幕' : '未发现字幕' }}</strong>
+            <strong>{{ analysis.recommendedTrack ? 'Subtitles found' : 'No embedded subtitles' }}</strong>
             <span>
               {{ durationLabel }}
               <template v-if="analysis.recommendedTrack">
                 · {{ languageName(analysis.recommendedTrack.language) }}
                 · {{ analysis.recommendedTrack.codec.toUpperCase() }}
               </template>
-              <template v-else> · 自动识别语言</template>
+              <template v-else> · Detect language</template>
             </span>
           </div>
           <span class="route-tag">
-            {{ analysis.strategy === 'extract_chinese' ? '直接提取' : analysis.strategy === 'translate_subtitle' ? '只翻译文本' : '识别音频' }}
+            {{ analysis.strategy === 'extract_chinese' ? 'Extract subtitles' : analysis.strategy === 'translate_subtitle' ? 'Translate subtitles' : 'Transcribe audio' }}
           </span>
         </div>
+        <section v-if="analysis && showAdvanced && burnVideo" class="preview-section" aria-label="Subtitle preview">
+          <div class="style-heading"><span>Style</span><small v-if="stylePreset === 'custom'">Custom</small></div>
+          <div class="preset-grid" role="radiogroup" aria-label="Style presets" @keydown="handlePresetKey">
+            <button v-for="preset in subtitlePresets" :key="preset.id" type="button" class="preset-option" :class="{ active: stylePreset === preset.id }" role="radio" :aria-checked="stylePreset === preset.id" :tabindex="stylePreset === preset.id || (stylePreset === 'custom' && preset.id === 'classic') ? 0 : -1" :disabled="processing" @click="applyPreset(preset.id)">
+              <i :style="{ color: preset.color }">Aa</i><strong>{{ preset.name }}</strong>
+            </button>
+          </div>
+          <div class="subtitle-preview" :class="previewPositionClass">
+            <div class="preview-caption" :style="previewBoxStyle">
+              <template v-if="contentMode === 'bilingual' && subtitleStyle.translatedFirst">
+                <span :style="translatedPreviewStyle">你好，欢迎使用 YDLite</span>
+                <span :style="sourcePreviewStyle">Hello, welcome to YDLite</span>
+              </template>
+              <template v-else>
+                <span v-if="contentMode !== 'translated'" :style="sourcePreviewStyle">Hello, welcome to YDLite</span>
+                <span v-if="contentMode !== 'source'" :style="translatedPreviewStyle">你好，欢迎使用 YDLite</span>
+              </template>
+            </div>
+          </div>
+          <p class="preview-disclaimer" title="Styles apply to video. SRT is plain text.">Preview</p>
+        </section>
       </main>
 
-      <aside v-if="analysis || analyzing" class="action-column">
+      <aside class="action-column">
         <div class="section-caption">
           <div>
-              <strong>自动处理</strong>
+              <strong>Output</strong>
           </div>
         </div>
 
         <section class="action-panel">
+          <div class="action-options">
           <div v-if="analysis" class="route-summary">
-            <span>处理流程</span>
             <strong>{{ processingPlan }}</strong>
             <small>
-              {{ automationFlowLabel }} · {{ processingTimeEstimate }}
+              {{ processingTimeEstimate }}
             </small>
           </div>
           <div v-else class="route-summary pending">
-            <span>自动流程</span>
-            <strong>等待选择视频</strong>
-            <small>选择后自动识别、翻译、校对并生成结果</small>
+            <strong>Choose a video to begin</strong>
           </div>
 
-          <label v-if="analysis && showAdvanced" class="burn-option">
-            <input v-model="burnVideo" type="checkbox" />
-            <span><strong>生成字幕视频</strong></span>
+          <button v-if="analysis" class="advanced-entry page-entry" type="button" :aria-label="showAdvanced ? 'Hide output options' : 'Customize output'" :aria-expanded="showAdvanced" :disabled="processing" @click="toggleOutputSettings">
+            {{ showAdvanced ? 'Hide options' : 'Customize' }}
+            <DisclosureChevron :open="showAdvanced" />
+          </button>
+
+          <p v-if="analysis && !showAdvanced" class="action-hint" title="Your original video is preserved">{{ outputSummary }}</p>
+
+          <AppCollapsible :open="Boolean(analysis && showAdvanced)">
+          <label class="burn-option">
+            <input v-model="burnVideo" type="checkbox" :disabled="processing || !analysis" />
+            <span><strong>Burn subtitles into video</strong></span>
           </label>
 
-          <fieldset v-if="analysis && showAdvanced && burnVideo" class="subtitle-style-editor" :disabled="processing">
+          <fieldset class="subtitle-style-editor" :disabled="processing || !analysis">
             <div class="style-field compact-field">
-              <span>字幕内容</span>
+              <span>Content</span>
               <AppSelect
                 v-model="contentMode"
                 :options="availableContentOptions"
-                aria-label="字幕内容"
+                aria-label="Content"
               />
             </div>
 
-            <div class="style-heading">
-              <span>字幕样式</span>
-              <small v-if="stylePreset === 'custom'">已自定义</small>
-            </div>
-            <div class="preset-grid" role="radiogroup" aria-label="字幕样式预设">
-              <button
-                v-for="preset in subtitlePresets"
-                :key="preset.id"
-                type="button"
-                class="preset-option"
-                :class="{ active: stylePreset === preset.id }"
-                role="radio"
-                :aria-checked="stylePreset === preset.id"
-                @click="applyPreset(preset.id)"
-              >
-                <i :style="{ color: preset.color, backgroundColor: preset.boxed ? '#34312f' : 'transparent' }">字</i>
-                <span><strong>{{ preset.name }}</strong><small>{{ preset.note }}</small></span>
-              </button>
-            </div>
+            <template v-if="burnVideo">
 
-            <div class="subtitle-preview" :class="previewPositionClass">
-              <div class="preview-caption" :style="previewBoxStyle">
-                <template v-if="contentMode === 'bilingual' && subtitleStyle.translatedFirst">
-                  <span :style="translatedPreviewStyle">你好，欢迎使用 YDLite</span>
-                  <span :style="sourcePreviewStyle">Hello, welcome to YDLite</span>
-                </template>
-                <template v-else>
-                  <span v-if="contentMode !== 'translated'" :style="sourcePreviewStyle">Hello, welcome to YDLite</span>
-                  <span v-if="contentMode !== 'source'" :style="translatedPreviewStyle">你好，欢迎使用 YDLite</span>
-                </template>
-              </div>
-            </div>
 
             <div v-if="contentMode === 'bilingual'" class="translation-link">
               <label>
                 <input v-model="syncTranslatedStyle" type="checkbox" />
-                <span><strong>译文跟随源文</strong><small>字体、颜色和字号保持一致</small></span>
+                <span><strong>Match source style</strong></span>
               </label>
             </div>
 
             <button class="advanced-toggle" type="button" :aria-expanded="advancedStyleOpen" @click="advancedStyleOpen = !advancedStyleOpen">
-              <span>{{ advancedStyleOpen ? '收起高级设置' : '高级设置' }}</span>
-              <i :class="{ open: advancedStyleOpen }">⌄</i>
+              <span>{{ advancedStyleOpen ? 'Hide advanced options' : 'Advanced options' }}</span>
+              <DisclosureChevron :open="advancedStyleOpen" />
             </button>
 
             <div class="advanced-wrap" :class="{ open: advancedStyleOpen }" :inert="!advancedStyleOpen" :aria-hidden="!advancedStyleOpen">
               <div class="advanced-inner">
                 <div class="advanced-grid primary-style-row">
                   <div class="style-field font-field">
-                    <span>字体</span>
+                    <span>Font</span>
                     <AppSelect
                       v-model="subtitleStyle.fontFamily"
                       :options="fontOptions"
-                      aria-label="字幕字体"
+                      aria-label="Subtitle font"
                       @update:model-value="markCustom"
                     />
                   </div>
                   <div class="style-field">
-                    <span>位置</span>
+                    <span>Position</span>
                     <AppSelect
                       v-model="subtitleStyle.position"
                       :options="positionOptions"
-                      aria-label="字幕位置"
+                      aria-label="Subtitle position"
                       @update:model-value="markCustom"
                     />
                   </div>
                 </div>
 
                 <section class="advanced-section">
-                  <span class="advanced-section-title">尺寸与位置</span>
+                  <span class="advanced-section-title">Size and position</span>
                   <div class="advanced-grid slider-grid">
                     <label class="style-field range-field">
-                      <span>源文字号 <b>{{ subtitleStyle.fontSize }}</b></span>
+                      <span>Source size <b>{{ subtitleStyle.fontSize }}</b></span>
                       <input v-model.number="subtitleStyle.fontSize" type="range" min="24" max="80" step="1" @input="markCustom" />
                     </label>
                     <label class="style-field range-field">
-                      <span>底部间距 <b>{{ subtitleStyle.marginVertical }}</b></span>
+                      <span>Vertical margin <b>{{ subtitleStyle.marginVertical }}</b></span>
                       <input v-model.number="subtitleStyle.marginVertical" type="range" min="20" max="180" step="4" @input="markCustom" />
                     </label>
                   </div>
                 </section>
 
                 <section class="advanced-section">
-                  <span class="advanced-section-title">颜色与描边</span>
+                  <span class="advanced-section-title">Color and outline</span>
                   <div class="color-grid">
                     <label class="color-control">
-                      <span>文字</span>
-                      <input v-model="subtitleStyle.primaryColor" type="color" aria-label="文字颜色" @input="markCustom" />
+                      <span>Text</span>
+                      <input v-model="subtitleStyle.primaryColor" type="color" aria-label="Text color" @input="markCustom" />
                     </label>
                     <label class="color-control">
-                      <span>描边</span>
-                      <input v-model="subtitleStyle.outlineColor" type="color" aria-label="描边颜色" @input="markCustom" />
+                      <span>Outline</span>
+                      <input v-model="subtitleStyle.outlineColor" type="color" aria-label="Outline color" @input="markCustom" />
                     </label>
                   </div>
                   <div class="outline-row">
                     <label class="style-field range-field">
-                      <span>描边粗细 <b>{{ subtitleStyle.outlineWidth }}</b></span>
+                      <span>Outline width <b>{{ subtitleStyle.outlineWidth }}</b></span>
                       <input v-model.number="subtitleStyle.outlineWidth" type="range" min="0" max="8" step="0.5" @input="markCustom" />
                     </label>
                     <label class="style-check compact-check">
                       <input v-model="subtitleStyle.bold" type="checkbox" @change="markCustom" />
-                      <span>粗体</span>
+                      <span>Bold</span>
                     </label>
                   </div>
                 </section>
 
                 <section v-if="contentMode === 'bilingual'" class="advanced-section bilingual-section">
-                  <span class="advanced-section-title">双语排列</span>
+                  <span class="advanced-section-title">Bilingual layout</span>
                   <div class="bilingual-controls">
                     <template v-if="!syncTranslatedStyle">
                       <label class="style-field range-field">
-                        <span>译文字号 <b>{{ subtitleStyle.translatedFontSize }}</b></span>
+                        <span>Translation size <b>{{ subtitleStyle.translatedFontSize }}</b></span>
                         <input v-model.number="subtitleStyle.translatedFontSize" type="range" min="24" max="80" step="1" @input="markCustom" />
                       </label>
                       <label class="color-control translated-color">
-                        <span>译文</span>
-                        <input v-model="subtitleStyle.translatedColor" type="color" aria-label="译文颜色" @input="markCustom" />
+                        <span>Translation</span>
+                        <input v-model="subtitleStyle.translatedColor" type="color" aria-label="Translation color" @input="markCustom" />
                       </label>
                     </template>
                     <label class="style-check order-check">
                       <input v-model="subtitleStyle.translatedFirst" type="checkbox" @change="markCustom" />
-                      <span>翻译字幕显示在上方</span>
+                      <span>Translation above source</span>
                     </label>
                   </div>
                 </section>
               </div>
             </div>
+            </template>
           </fieldset>
+          </AppCollapsible>
 
           <section v-if="!hasProjectSegments && readinessCard" class="readiness-card" aria-live="polite">
             <span class="readiness-mark">!</span>
             <div class="readiness-copy">
-              <span>开始前准备</span>
+              <span>Setup required</span>
               <strong>{{ readinessCard.title }}</strong>
               <p>{{ readinessCard.description }}</p>
             </div>
@@ -1512,25 +1527,14 @@ onBeforeUnmount(() => {
               {{ readinessCard.actionLabel }}
             </button>
           </section>
+          </div>
+          <div v-if="processing || error || notice || subtitleOutput || videoOutput" class="action-execute">
 
-          <button
-            v-if="project && (project.status === 'paused' || project.status === 'failed')"
-            class="generate-button"
-            type="button"
-            :disabled="processing || analyzing"
-            @click="continueProject"
-          >
-            <span>{{ processing ? '正在继续处理…' : '继续上次任务' }}</span>
-          </button>
-          <button v-else-if="!hasProjectSegments || (project && !subtitleOutput && !videoOutput)" class="generate-button" type="button" :disabled="analysis ? !canGenerate : analyzing" @click="generateChineseSubtitles">
-            <span>{{ actionLabel }}</span>
-          </button>
-          <p v-else-if="!hasProjectSegments && generateHint" class="action-hint">{{ generateHint }}</p>
 
           <div v-if="processing" class="task-progress">
-            <div><strong>{{ stageLabel || '正在处理…' }}</strong><span>{{ Math.round(progress?.percent ?? 0) }}%</span></div>
-            <div class="progress-track"><i :style="{ width: `${progress?.percent ?? 0}%` }" /></div>
-            <button type="button" @click="cancel">取消任务</button>
+            <div><strong>{{ stageLabel || 'Processing…' }}</strong><span>{{ Math.round(progress?.percent ?? 0) }}%</span></div>
+            <div class="progress-track" role="progressbar" aria-label="Subtitle progress" :aria-valuenow="progress?.percent ?? 0" :aria-valuemin="0" :aria-valuemax="100"><i :style="{ width: `${progress?.percent ?? 0}%` }" /></div>
+            <button type="button" @click="cancel">Cancel task</button>
           </div>
 
           <p v-if="error" class="message error">{{ error }}</p>
@@ -1539,1589 +1543,138 @@ onBeforeUnmount(() => {
           <div v-if="(subtitleOutput || videoOutput) && !processing" ref="resultPanel" class="output-panel">
             <div class="output-heading"><span class="result-mark done"><i class="icon" :style="iconStyle(checkIcon)" /></span><strong>{{ outputHeading }}</strong></div>
             <div class="output-actions">
-              <button v-if="videoOutput" class="dark" type="button" @click="openPath(videoOutput)"><i class="icon" :style="iconStyle(mediaVideoIcon)" />播放字幕视频</button>
-              <button v-if="subtitleOutput" type="button" @click="openPath(subtitleOutput)"><i class="icon" :style="iconStyle(pageIcon)" />打开字幕</button>
-              <button type="button" @click="openParentFolder(subtitleOutput || videoOutput)"><i class="icon" :style="iconStyle(folderIcon)" />打开文件夹</button>
+              <button v-if="videoOutput" class="dark" type="button" @click="openPath(videoOutput)"><i class="icon" :style="iconStyle(mediaVideoIcon)" />Play video</button>
+              <button v-if="subtitleOutput" type="button" @click="openPath(subtitleOutput)"><i class="icon" :style="iconStyle(pageIcon)" />Open subtitles</button>
+              <button type="button" @click="openParentFolder(subtitleOutput || videoOutput)"><i class="icon" :style="iconStyle(folderIcon)" />Open folder</button>
             </div>
+          </div>
           </div>
         </section>
       </aside>
     </div>
-
+    <footer v-if="!hasProjectSegments || (project && !subtitleOutput && !videoOutput) || (project && ['paused', 'failed'].includes(project.status))" class="subtitle-actions">
+      <button v-if="project && ['paused', 'failed'].includes(project.status)" class="generate-button" type="button" :disabled="processing || analyzing" @click="continueProject">{{ processing ? 'Resuming…' : 'Resume task' }}</button>
+      <button v-else class="generate-button" type="button" :disabled="analysis ? !canGenerate : analyzing" @click="generateChineseSubtitles">{{ actionLabel }}</button>
+      <p v-if="!hasProjectSegments && generateHint" class="action-hint">{{ generateHint }}</p>
+    </footer>
   </section>
 </template>
 
 <style scoped>
-.simple-subtitle {
-  height: 100%;
-  overflow: auto;
-  background: transparent;
-  color: var(--workspace-ink);
-}
 
-.simple-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  max-width: 1040px;
-  margin: 0 auto 26px;
-}
+.simple-subtitle { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px; color: var(--ink); }
+.simple-subtitle > .page-header { flex-shrink: 0; }
+.subtitle-layout { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,18rem),1fr)); gap: 16px; flex: 1; min-block-size: 0; inline-size: 100%; max-inline-size: 1040px; margin-inline: auto; padding: 1px 1px 16px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; align-items: start; align-content: start; }
+.source-column, .action-column { min-width: 0; border-radius: var(--radius-panel); background: var(--surface); box-shadow: var(--panel-shadow); }
+.section-caption { padding: 14px 20px; border-bottom: 1px solid var(--border); border-radius: var(--radius-panel) var(--radius-panel) 0 0; background: var(--surface-subtle); }
+.section-caption strong { font-size: 16px; font-weight: 600; }
+.file-card { display: flex; align-items: center; gap: 12px; width: calc(100% - 32px); margin: 16px; padding: 12px 16px; border: 1px dashed var(--border-strong); border-radius: var(--radius-control); background: var(--surface-subtle); color: var(--ink); text-align: left; }
+.file-card:hover:not(:disabled) { background: var(--surface-subtle); border-color: var(--primary); }
+.file-card.has-source { border-style: solid; border-color: var(--border); background: var(--surface); }
+.file-icon { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius-control); background: var(--surface-hover); color: var(--muted); }
+.file-icon .icon { width: 18px; height: 18px; }
+.file-copy { min-width: 0; flex: 1; }
+.file-copy strong { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-copy small { display: block; color: var(--muted); font-size: 14px; line-height: 1.5; margin-top: 4px; overflow-wrap: anywhere; }
+.replace-label { color: var(--primary); white-space: nowrap; align-self: center; }
+.analysis-card { display: flex; align-items: flex-start; gap: 10px; margin: 0 16px 16px; padding: 10px 16px; border-radius: var(--radius-control); background: var(--surface-subtle); }
+.analysis-copy { min-width: 0; flex: 1; }
+.analysis-copy strong, .analysis-copy span { display: block; }
+.analysis-copy span { color: var(--muted); margin-top: 2px; }
+.result-mark { display: flex; align-items: center; height: 21px; color: var(--success); flex-shrink: 0; }
+.result-mark.done { color: var(--success); }
+.route-tag { display: none; }
+.loading i { width: 16px; height: 16px; margin-top: 3px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 800ms linear infinite; flex-shrink: 0; }
+.loading strong, .loading span { display: block; }
+.loading span { margin-top: 2px; color: var(--muted); }
+.action-panel { display: flex; flex-direction: column; }
+.action-options { padding: 16px 20px; }
+.action-execute { flex-shrink: 0; padding: 16px 20px; border-top: 1px solid var(--border); }
+.route-summary > span, .route-summary strong, .route-summary small { display: block; }
+.route-summary > span { color: var(--subtle); }
+.route-summary strong { margin-top: 4px; font-size: 16px; font-weight: 600; }
+.route-summary small { font-size: 14px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+.route-summary.pending { padding: 12px 0; }
+.output-actions button, .readiness-card button { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--radius-control); background: var(--surface); color: var(--ink); box-shadow: var(--control-shadow); }
+.output-actions button:hover, .readiness-card button:hover { background: var(--surface-hover); }
+.advanced-entry { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 36px; margin-top: 16px; padding: 0 10px; border: 0; border-radius: var(--radius-control); background: var(--surface-subtle); color: var(--ink); text-align: left; box-shadow: 0 0 0 1px var(--border); }
+.advanced-entry:hover:not(:disabled) { background: var(--surface-hover); }
+.action-hint { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.burn-option { display: flex; align-items: center; gap: 8px; padding: 16px 0; margin-top: 12px; border-top: 1px solid var(--border); }
+.subtitle-style-editor { min-width: 0; margin: 0; padding: 0; border: 0; }
+.style-field { display: grid; gap: 6px; min-width: 0; color: var(--muted); }
+.compact-field { grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 16px; }
+.style-heading { display: flex; justify-content: space-between; margin: 20px 0 8px; color: var(--muted); }
+.style-heading small { font-size: 14px; color: var(--primary); }
+.preset-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,4.5rem),1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-hover); }
+.preset-option { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; padding: 8px 6px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--muted); box-shadow: none; }
+.preset-option:hover { background: var(--surface-hover); }
+.preset-option.active { background: var(--surface); color: var(--ink); box-shadow: var(--control-shadow); }
+.preset-option.active:hover { background: var(--surface-subtle); }
+.preset-option i { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; border-radius: 4px; background: #3b4352 !important; font-size: 14px; font-style: normal; text-shadow: 0 1px 1px #000; }
+.preset-option strong, .preset-option small { display: block; }
+.preset-option small { font-size: 14px; color: var(--muted); margin-top: 2px; }
+.subtitle-preview { display: flex; justify-content: center; align-items: flex-end; height: 144px; margin-top: 12px; padding: 18px; border-radius: var(--radius-control); background: #242428; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%); overflow: hidden; }
+.subtitle-preview.position-top { align-items: flex-start; }
+.subtitle-preview.position-middle { align-items: center; }
+.preview-caption { display: flex; flex-direction: column; align-items: center; max-width: 100%; text-align: center; }
+.preview-caption span { overflow-wrap: anywhere; line-height: 1.5; }
+.preview-disclaimer { margin: 8px 0 0; color: var(--subtle); font-size: 14px; line-height: 1.5; }
+.translation-link { margin-top: 16px; }
+.translation-link label { display: flex; align-items: flex-start; gap: 8px; }
+.translation-link input { margin-top: 4px; }
+.translation-link strong, .translation-link small { display: block; }
+.translation-link small { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.advanced-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 40px; margin-top: 16px; padding: 0; border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--ink); }
+.advanced-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 180ms var(--ease-out); }
+.advanced-wrap.open { grid-template-rows: 1fr; }
+.advanced-inner { min-height: 0; overflow: hidden; }
+.advanced-grid, .color-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.advanced-section { padding: 16px 0; border-bottom: 1px solid var(--border); }
+.advanced-section:last-child { border-bottom: 0; }
+.advanced-section-title { display: block; margin-bottom: 12px; font-weight: 500; }
+.range-field > span { display: flex; justify-content: space-between; gap: 8px; }
+.range-field input { width: 100%; margin: 6px 0; }
+input[type=range] { appearance: none; height: 4px; border-radius: 99px; background: var(--border-strong); cursor: pointer; }
+input[type=range]::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: 0 0 0 1px var(--border-strong), 0 1px 3px rgb(24 24 27 / 12%); }
+input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--surface); }
+input[type=range]:active::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--primary); }
+.color-control { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); }
+.color-control input { width: 36px; height: 28px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type=color]::-webkit-color-swatch { border: 0; border-radius: 3px; }
+input[type=color]::-moz-color-swatch { border: 0; border-radius: 3px; }
+.outline-row, .bilingual-controls { display: grid; gap: 12px; margin-top: 12px; }
+.style-check { display: flex; align-items: center; gap: 8px; }
+.readiness-card { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 10px; padding: 12px 16px; margin-top: 20px; border-radius: 8px; background: var(--warning-soft); }
+.readiness-mark { color: var(--warning); line-height: 21px; }
+.readiness-copy { flex: 1; min-width: 160px; }
+.readiness-copy > span { color: var(--muted); }
+.readiness-copy strong { display: block; margin-top: 2px; font-weight: 500; }
+.readiness-copy p { margin: 4px 0 0; color: var(--muted); }
+.generate-button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 36px; margin-top: 0; padding: 8px 12px; border: 0; border-radius: var(--radius-control); background: var(--primary-fill); color: white; font-size: 14px; font-weight: 500; box-shadow: var(--primary-shadow); }
+.generate-button:hover:not(:disabled) { background: var(--primary-fill-hover); }
+.generate-button:active:not(:disabled) { background: var(--primary-hover); box-shadow: 0 0 0 1px var(--primary-hover), inset 0 1px 2px rgb(24 24 27 / 16%); }
+button:disabled { opacity: 0.45; }
+.task-progress { margin-top: 20px; }
+.task-progress > div:first-child { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+.task-progress .progress-track i { display: block; height: 100%; background: var(--primary); }
+.task-progress button { border: 0; padding: 0; background: transparent; color: var(--muted); }
+.message { margin: 16px 0 0; padding: 12px 16px; border-radius: 8px; overflow-wrap: anywhere; }
+.message.error { color: var(--danger); background: var(--danger-soft); }
+.message.success { color: var(--success); background: var(--success-soft); }
+.output-panel { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 16px; }
+.output-heading { display: flex; align-items: center; gap: 8px; }
+.output-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.output-actions .dark { background: var(--primary-fill); color: white; box-shadow: var(--primary-shadow); }
+.output-actions .dark:hover { background: var(--primary-fill-hover); }
+.preview-section { padding: 16px 20px; border-top: 1px solid var(--border); }
+.preview-section .style-heading { margin: 0 0 12px; }
+.subtitle-actions { display: flex; flex-direction: row-reverse; align-items: center; gap: 16px; flex-shrink: 0; width: 100%; max-width: 1040px; margin: 0 auto; padding: 12px 16px; border: 0; border-radius: var(--radius-panel); background: var(--surface); box-shadow: var(--control-shadow); }
+.subtitle-actions .generate-button { width: auto; min-width: 200px; }
+.subtitle-actions .action-hint { margin: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@container workspace (max-width: 760px) { .preset-option { display: grid; justify-items: center; gap: 4px; padding: 8px 4px; } }
+@media (prefers-reduced-motion: reduce) { .loading i { animation: none; } .advanced-wrap { transition: none; } }
 
-.simple-header h1 {
-  margin: 0;
-  font-family: inherit;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.02em;
-}
-
-.simple-header p {
-  max-width: 650px;
-  margin: 0;
-  color: var(--workspace-muted);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.settings-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  gap: 7px;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 9px;
-  background: var(--workspace-surface);
-  color: var(--workspace-ink);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: border-color 140ms ease-out, background-color 140ms ease-out, transform 140ms var(--workspace-ease);
-}
-
-.settings-button:hover {
-  border-color: var(--workspace-border-strong);
-  background: var(--workspace-surface-muted);
-  transform: translateY(-1px);
-}
-
-.subtitle-layout {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
-  max-width: 1040px;
-  margin: 0 auto;
-  align-items: start;
-}
-
-.source-column,
-.action-column {
-  min-width: 0;
-}
-
-.section-caption {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  min-height: auto;
-  margin-bottom: 10px;
-}
-
-.section-caption strong,
-.section-caption small {
-  display: block;
-}
-
-.section-caption strong {
-  color: var(--workspace-ink);
-  font-size: 13px;
-}
-
-.section-caption small {
-  margin-top: 3px;
-  color: var(--workspace-subtle);
-  font-size: 10px;
-}
-
-.file-card {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 15px;
-  width: 100%;
-  min-height: 80px;
-  padding: 14px;
-  border: 1px dashed var(--workspace-border-strong);
-  border-radius: 10px;
-  background: var(--workspace-surface);
-  color: var(--workspace-ink);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 140ms ease-out, background-color 140ms ease-out;
-}
-
-.file-card:hover:not(:disabled) {
-  border-color: var(--workspace-accent);
-  background: var(--workspace-accent-soft);
-}
-
-.file-icon {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 13px;
-  background: var(--workspace-ink);
-  color: white;
-  font-size: 11px;
-}
-
-.file-copy {
-  min-width: 0;
-}
-
-.file-copy strong,
-.file-copy small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-copy strong {
-  font-size: 14px;
-}
-
-.file-copy small {
-  margin-top: 6px;
-  color: var(--workspace-subtle);
-  font-size: 11px;
-}
-
-.replace-label {
-  padding: 7px 10px;
-  border-radius: 8px;
-  background: var(--workspace-accent-soft);
-  color: var(--workspace-accent);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.analysis-card {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  margin-top: 14px;
-  padding: 16px 17px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 12px;
-  background: var(--workspace-surface);
-  animation: panel-in 260ms var(--workspace-ease);
-}
-
-.result-mark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--workspace-accent-soft);
-  color: var(--workspace-accent);
-  font-weight: 700;
-}
-
-.result-mark .icon {
-  width: 16px;
-  height: 16px;
-}
-
-.analysis-copy {
-  min-width: 0;
-}
-
-.analysis-copy strong,
-.analysis-copy span {
-  display: block;
-}
-
-.analysis-copy strong {
-  font-size: 13px;
-}
-
-.analysis-copy span {
-  margin-top: 5px;
-  color: var(--workspace-subtle);
-  font-size: 11px;
-}
-
-.route-tag {
-  padding: 6px 9px;
-  border-radius: 7px;
-  background: var(--workspace-surface-muted);
-  color: var(--workspace-muted);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.loading i {
-  width: 28px;
-  height: 28px;
-  border: 2px solid var(--workspace-border);
-  border-top-color: var(--workspace-accent);
-  border-radius: 50%;
-  animation: spin 800ms linear infinite;
-}
-
-.loading strong,
-.loading span {
-  display: block;
-}
-
-.loading span {
-  margin-top: 4px;
-  color: var(--workspace-subtle);
-  font-size: 11px;
-}
-
-.action-panel {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.route-summary {
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--workspace-border);
-}
-
-.route-summary > span,
-.route-summary strong,
-.route-summary small {
-  display: block;
-}
-
-.route-summary > span {
-  color: var(--workspace-subtle);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.route-summary strong {
-  margin-top: 6px;
-  color: var(--workspace-ink);
-  font-size: 14px;
-}
-
-.route-summary small {
-  margin-top: 5px;
-  color: var(--workspace-muted);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.route-summary.pending strong {
-  color: var(--workspace-muted);
-}
-
-.burn-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 16px;
-  cursor: pointer;
-}
-
-.burn-option input {
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  accent-color: var(--workspace-accent);
-}
-
-.burn-option span,
-.burn-option strong,
-.burn-option small {
-  display: block;
-}
-
-.subtitle-style-editor {
-  min-width: 0;
-  margin-top: 16px;
-  padding-right: 0;
-  padding-left: 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--workspace-border);
-  border-right: 0;
-  border-bottom: 0;
-  border-left: 0;
-}
-
-.subtitle-style-editor:disabled {
-  opacity: 0.62;
-}
-
-.style-heading,
-.style-field > span {
-  color: var(--workspace-subtle);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.compact-field {
-  display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-}
-
-.style-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 16px;
-}
-
-.style-heading small {
-  color: var(--workspace-accent);
-  font-size: 9px;
-}
-
-.preset-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.preset-option {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-width: 0;
-  min-height: 70px;
-  padding: 8px 5px 7px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--workspace-ink);
-  text-align: center;
-  cursor: pointer;
-  transition: border-color 140ms ease-out, background-color 140ms ease-out;
-}
-
-.preset-option:hover,
-.preset-option.active {
-  border-color: var(--workspace-accent);
-  background: var(--workspace-accent-soft);
-}
-
-.preset-option.active {
-  background: transparent;
-}
-
-.preset-option i {
-  display: grid;
-  place-items: center;
-  flex: 0 0 27px;
-  width: 27px;
-  height: 27px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-style: normal;
-  font-weight: 800;
-  text-shadow: 1px 1px 0 #171615, -1px -1px 0 #171615;
-}
-
-.preset-option span,
-.preset-option strong,
-.preset-option small {
-  display: block;
-  min-width: 0;
-}
-
-.preset-option strong {
-  overflow: hidden;
-  font-size: 10px;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preset-option small {
-  margin-top: 3px;
-  color: var(--workspace-subtle);
-  font-size: 8px;
-  line-height: 1.2;
-}
-
-.subtitle-preview {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  min-height: 126px;
-  margin-top: 10px;
-  overflow: hidden;
-  border-radius: 9px;
-  background:
-    linear-gradient(180deg, transparent 0 62%, rgba(20, 18, 16, 0.34)),
-    radial-gradient(circle at 72% 22%, rgba(222, 194, 150, 0.34), transparent 22%),
-    linear-gradient(135deg, #777b76, #313735 58%, #202423);
-}
-
-.subtitle-preview::before {
-  position: absolute;
-  inset: 16px 18px auto auto;
-  width: 54px;
-  height: 22px;
-  border: 1px solid rgba(247, 241, 232, 0.22);
-  border-radius: 99px;
-  content: '';
-}
-
-.preview-caption {
-  position: absolute;
-  display: grid;
-  justify-items: center;
-  max-width: calc(100% - 28px);
-  padding: 3px 7px;
-  border-radius: 3px;
-  line-height: 1.28;
-  text-align: center;
-}
-
-.position-bottom .preview-caption { bottom: 12px; }
-.position-middle .preview-caption { top: 50%; transform: translateY(-50%); }
-.position-top .preview-caption { top: 12px; }
-
-.preview-caption span {
-  display: block;
-  white-space: nowrap;
-}
-
-.translation-link {
-  margin-top: 11px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--workspace-border);
-}
-
-.translation-link > label:first-child {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  cursor: pointer;
-}
-
-.translation-link input[type='checkbox'],
-.style-check input {
-  width: 15px;
-  height: 15px;
-  margin: 1px 0 0;
-  accent-color: var(--workspace-accent);
-}
-
-.translation-link strong,
-.translation-link small {
-  display: block;
-}
-
-.translation-link strong {
-  font-size: 11px;
-}
-
-.translation-link small {
-  margin-top: 2px;
-  color: var(--workspace-subtle);
-  font-size: 9px;
-  line-height: 1.45;
-}
-
-.advanced-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  min-height: 38px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--workspace-muted);
-  font-size: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.advanced-toggle i {
-  font-size: 16px;
-  font-style: normal;
-  transition: transform 160ms var(--workspace-ease);
-}
-
-.advanced-toggle i.open {
-  transform: rotate(180deg);
-}
-
-.advanced-wrap {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 180ms var(--workspace-ease);
-}
-
-.advanced-wrap.open {
-  grid-template-rows: 1fr;
-}
-
-.advanced-wrap.open .advanced-inner {
-  overflow: visible;
-}
-
-.advanced-inner {
-  min-height: 0;
-  overflow: hidden;
-}
-
-.advanced-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.primary-style-row {
-  grid-template-columns: minmax(0, 1.25fr) minmax(104px, 0.75fr);
-  padding: 7px 0 5px;
-}
-
-.advanced-section {
-  margin-top: 13px;
-  padding-top: 12px;
-  border-top: 1px solid var(--workspace-border);
-}
-
-.advanced-section-title {
-  display: block;
-  margin-bottom: 10px;
-  color: var(--workspace-subtle);
-  font-size: 9px;
-  font-weight: 750;
-  letter-spacing: 0.02em;
-}
-
-.style-field {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.style-field b {
-  color: var(--workspace-ink);
-  font-size: 9px;
-}
-
-.range-field > span {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.slider-grid {
-  padding: 0;
-}
-
-.range-field input[type='range'] {
-  width: 100%;
-  min-height: 20px;
-  margin: 0;
-  accent-color: var(--workspace-accent);
-}
-
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.color-control {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 42px;
-  padding: 5px 6px 5px 10px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 8px;
-  color: var(--workspace-muted);
-  font-size: 10px;
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.color-control input {
-  flex: 0 0 31px;
-  width: 31px;
-  height: 31px;
-  padding: 2px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 6px;
-  background: var(--workspace-surface);
-  cursor: pointer;
-}
-
-.outline-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 12px;
-  margin-top: 11px;
-}
-
-.style-check {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 32px;
-  color: var(--workspace-muted);
-  font-size: 10px;
-  cursor: pointer;
-}
-
-.compact-check {
-  min-height: 38px;
-  padding: 0 2px 0 12px;
-  border-left: 1px solid var(--workspace-border);
-}
-
-.bilingual-section {
-  padding-bottom: 2px;
-}
-
-.bilingual-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 11px;
-}
-
-.order-check {
-  grid-column: 1 / -1;
-  min-height: 28px;
-}
-
-.translated-color {
-  min-width: 92px;
-}
-
-.burn-option strong {
-  color: var(--workspace-ink);
-  font-size: 12px;
-}
-
-.burn-option small {
-  margin-top: 4px;
-  color: var(--workspace-subtle);
-  font-size: 10px;
-}
-
-.readiness-card {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  margin: 14px 0;
-  padding: 11px 12px;
-  border: 1px solid color-mix(in oklch, var(--workspace-accent) 26%, var(--workspace-border));
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--workspace-accent-soft) 62%, var(--workspace-surface));
-}
-
-.readiness-mark {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--workspace-accent);
-  color: var(--workspace-surface);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.readiness-copy {
-  min-width: 0;
-}
-
-.readiness-copy > span,
-.readiness-copy strong,
-.readiness-copy p {
-  display: block;
-}
-
-.readiness-copy > span {
-  color: var(--workspace-accent);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.readiness-copy strong {
-  margin-top: 2px;
-  color: var(--workspace-ink);
-  font-size: 12px;
-}
-
-.readiness-copy p {
-  margin: 3px 0 0;
-  color: var(--workspace-muted);
-  font-size: 10px;
-  line-height: 1.5;
-}
-
-.readiness-card button {
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--workspace-accent);
-  border-radius: 7px;
-  background: var(--workspace-surface);
-  color: var(--workspace-accent);
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 140ms ease-out, color 140ms ease-out, opacity 140ms ease-out;
-}
-
-.readiness-card button:hover:not(:disabled) {
-  background: var(--workspace-accent);
-  color: var(--workspace-surface);
-}
-
-.readiness-card button:disabled {
-  opacity: 0.55;
-  cursor: wait;
-}
-
-.generate-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  place-items: center;
-  width: 100%;
-  min-height: 44px;
-  margin-top: 18px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--workspace-accent);
-  color: white;
-  cursor: pointer;
-  box-shadow: none;
-  transition: background-color 140ms ease-out, opacity 140ms ease-out;
-}
-
-.generate-button:hover:not(:disabled) {
-  background: var(--workspace-accent-hover);
-}
-
-.generate-button span {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.generate-button:disabled {
-  background: var(--workspace-border-strong);
-  box-shadow: none;
-  cursor: not-allowed;
-}
-
-.action-hint {
-  margin: 8px 0 0;
-  color: var(--workspace-subtle);
-  font-size: 10px;
-  text-align: center;
-}
-
-.task-progress {
-  margin-top: 14px;
-  padding: 14px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 10px;
-  background: var(--workspace-surface-muted);
-}
-
-.task-progress > div:first-child {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--workspace-muted);
-  font-size: 11px;
-}
-
-.progress-track {
-  height: 6px;
-  margin-top: 11px;
-  overflow: hidden;
-  border-radius: 99px;
-  background: var(--workspace-border);
-}
-
-.progress-track i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--workspace-accent);
-  transition: width 300ms var(--workspace-ease);
-}
-
-.task-progress button {
-  margin-top: 10px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--workspace-danger);
-  font-size: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.message {
-  margin: 14px 0 0;
-  padding: 12px 13px;
-  border-radius: 9px;
-  font-size: 11px;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.message.error {
-  background: oklch(0.94 0.035 28);
-  color: var(--workspace-danger);
-}
-
-.message.success {
-  background: var(--workspace-accent-soft);
-  color: var(--workspace-accent);
-}
-
-.output-panel {
-  margin-top: 14px;
-  padding-top: 16px;
-  border-top: 1px solid var(--workspace-border);
-  animation: panel-in 300ms var(--workspace-ease);
-}
-
-.output-heading {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-}
-
-.output-heading strong,
-.output-heading small {
-  display: block;
-}
-
-.output-heading strong {
-  font-size: 13px;
-}
-
-.output-heading small {
-  margin-top: 4px;
-  color: var(--workspace-subtle);
-  font-size: 10px;
-}
-
-.output-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 14px;
-}
-
-.output-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1 1 82px;
-  gap: 6px;
-  min-height: 38px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 8px;
-  background: var(--workspace-surface);
-  color: var(--workspace-ink);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: border-color 140ms ease-out, background-color 140ms ease-out, transform 140ms var(--workspace-ease);
-}
-
-.output-actions button:hover {
-  border-color: var(--workspace-border-strong);
-  background: var(--workspace-surface-muted);
-  transform: translateY(-1px);
-}
-
-.output-actions .dark {
-  border-color: var(--workspace-accent);
-  background: var(--workspace-accent);
-  color: white;
-}
-
-.output-actions .dark:hover {
-  border-color: var(--workspace-accent-hover);
-  background: var(--workspace-accent-hover);
-  color: white;
-}
-
-.advanced-entry {
-  display: block;
-  width: 100%;
-  margin-top: 10px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--workspace-accent);
-  font-size: 10px;
-  font-weight: 700;
-  text-align: center;
-  cursor: pointer;
-}
-
-.advanced-entry:hover {
-  color: var(--workspace-accent-hover);
-  text-decoration: underline;
-}
-
-.advanced-entry.page-entry {
-  max-width: 220px;
-  margin: 18px auto 0;
-}
-
-.project-workbench {
-  max-width: 1040px;
-  margin: 38px auto 0;
-  padding: 22px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 16px;
-  background: color-mix(in oklab, var(--workspace-surface) 94%, white);
-  box-shadow: 0 18px 44px rgb(41 50 65 / 7%);
-}
-
-.workbench-header,
-.delivery-heading,
-.segments-review-header,
-.qa-summary,
-.video-review-meta,
-.video-review-tools,
-.delivery-controls,
-.artifact-list {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.workbench-header,
-.delivery-heading,
-.segments-review-header,
-.qa-summary {
-  justify-content: space-between;
-}
-
-.workbench-kicker {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--workspace-accent);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.workbench-header h2,
-.delivery-heading h3 {
-  margin: 0;
-  color: var(--workspace-ink);
-  font-size: 18px;
-  letter-spacing: -0.02em;
-}
-
-.workbench-header p,
-.delivery-heading p,
-.segments-review-header small,
-.qa-summary span,
-.video-review-meta,
-.artifact-list > span {
-  margin: 5px 0 0;
-  color: var(--workspace-muted);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.workbench-header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 7px;
-}
-
-.workbench-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 34px;
-  padding: 0 11px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 8px;
-  background: var(--workspace-surface);
-  color: var(--workspace-ink);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: border-color 140ms ease-out, background-color 140ms ease-out, color 140ms ease-out;
-}
-
-.workbench-button:hover:not(:disabled) {
-  border-color: var(--workspace-border-strong);
-  background: var(--workspace-surface-muted);
-}
-
-.workbench-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
-}
-
-.workbench-button.primary {
-  border-color: var(--workspace-accent);
-  background: var(--workspace-accent);
-  color: white;
-}
-
-.workbench-button.primary:hover:not(:disabled) {
-  border-color: var(--workspace-accent-hover);
-  background: var(--workspace-accent-hover);
-}
-
-.workbench-button.dark {
-  border-color: #252c38;
-  background: #252c38;
-  color: white;
-}
-
-.workbench-button.danger {
-  color: var(--workspace-danger);
-}
-
-.workbench-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
-  gap: 18px;
-  margin-top: 20px;
-}
-
-.video-review-panel,
-.segments-review-panel,
-.delivery-panel {
-  min-width: 0;
-  border: 1px solid var(--workspace-border);
-  border-radius: 12px;
-  background: var(--workspace-surface-muted);
-}
-
-.video-review-panel {
-  overflow: hidden;
-}
-
-.video-review-stage {
-  position: relative;
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-  background: #171b22;
-}
-
-.video-review-stage video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.video-caption-preview {
-  position: absolute;
-  right: 5%;
-  left: 5%;
-  display: grid;
-  justify-items: center;
-  gap: 2px;
-  padding: 7px 11px;
-  text-align: center;
-  pointer-events: none;
-}
-
-.video-review-stage.position-bottom .video-caption-preview { bottom: 9%; }
-.video-review-stage.position-middle .video-caption-preview { top: 50%; transform: translateY(-50%); }
-.video-review-stage.position-top .video-caption-preview { top: 9%; }
-
-.video-caption-preview span {
-  display: block;
-  max-width: 100%;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.video-review-meta,
-.video-review-tools {
-  padding: 11px 13px;
-}
-
-.video-review-meta {
-  justify-content: space-between;
-  margin: 0;
-  border-top: 1px solid var(--workspace-border);
-}
-
-.video-review-tools {
-  flex-wrap: wrap;
-  border-top: 1px solid var(--workspace-border);
-}
-
-.segments-review-panel {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.segments-review-header,
-.qa-summary {
-  padding: 13px;
-}
-
-.segments-review-header {
-  border-bottom: 1px solid var(--workspace-border);
-}
-
-.segments-review-header strong,
-.qa-summary strong {
-  display: block;
-  color: var(--workspace-ink);
-  font-size: 12px;
-}
-
-.segments-review-header small {
-  display: block;
-}
-
-.segment-filter,
-.replace-tools {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 13px;
-  border-bottom: 1px solid var(--workspace-border);
-}
-
-.segment-filter input,
-.replace-tools input {
-  box-sizing: border-box;
-  min-width: 0;
-  height: 31px;
-  flex: 1;
-  padding: 0 9px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 7px;
-  background: var(--workspace-surface);
-  color: var(--workspace-ink);
-  font: inherit;
-  font-size: 11px;
-}
-
-.segment-filter span {
-  flex: 0 0 auto;
-  color: var(--workspace-subtle);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.replace-tools {
-  background: color-mix(in oklab, var(--workspace-accent-soft) 35%, transparent);
-}
-
-.save-state {
-  flex: 0 0 auto;
-  color: var(--workspace-accent);
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.save-state.unsaved { color: #a66a00; }
-
-.qa-summary {
-  background: color-mix(in oklab, var(--workspace-accent-soft) 55%, transparent);
-}
-
-.qa-summary.clear {
-  background: color-mix(in oklab, #e7f6ed 75%, transparent);
-}
-
-.qa-summary span { display: block; }
-
-.qa-issues {
-  display: grid;
-  gap: 5px;
-  padding: 9px 13px;
-  border-bottom: 1px solid var(--workspace-border);
-}
-
-.qa-issues button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--workspace-muted);
-  font-size: 10px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.qa-issues button:hover { color: var(--workspace-ink); }
-.qa-issues button > span,
-.segment-issue-tags span {
-  display: inline-block;
-  margin-right: 5px;
-  padding: 1px 4px;
-  border-radius: 4px;
-  font-size: 9px;
-  font-weight: 800;
-}
-
-.qa-issues button.error > span,
-.segment-issue-tags .error {
-  background: oklch(0.94 0.035 28);
-  color: var(--workspace-danger);
-}
-
-.qa-issues button.warning > span,
-.segment-issue-tags .warning {
-  background: oklch(0.96 0.04 82);
-  color: #885a00;
-}
-
-.qa-issues > span {
-  color: var(--workspace-subtle);
-  font-size: 10px;
-}
-
-.segment-list {
-  min-height: 280px;
-  max-height: 510px;
-  overflow: auto;
-}
-
-.segment-row {
-  display: grid;
-  grid-template-columns: 29px minmax(0, 1fr);
-  gap: 9px;
-  padding: 10px 12px;
-  border-bottom: 1px solid color-mix(in oklab, var(--workspace-border) 72%, transparent);
-  cursor: pointer;
-}
-
-.segment-row:hover,
-.segment-row.selected {
-  background: color-mix(in oklab, var(--workspace-accent-soft) 58%, transparent);
-}
-
-.segment-row.selected {
-  background: transparent;
-}
-
-.segment-row.active {
-  background: transparent;
-  box-shadow: none;
-}
-.segment-row.invalid {
-  background: color-mix(in oklab, var(--danger-soft) 70%, transparent);
-  box-shadow: none;
-}
-
-.segment-index {
-  align-self: start;
-  width: 27px;
-  height: 27px;
-  padding: 0;
-  border: 1px solid var(--workspace-border);
-  border-radius: 7px;
-  background: var(--workspace-surface);
-  color: var(--workspace-muted);
-  font-size: 10px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.segment-editor { min-width: 0; }
-
-.segment-time-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 6px;
-  color: var(--workspace-subtle);
-  font-size: 10px;
-}
-
-.segment-time-fields input,
-.segment-editor textarea,
-.review-status-control select {
-  box-sizing: border-box;
-  width: 100%;
-  border: 1px solid var(--workspace-border);
-  border-radius: 6px;
-  background: var(--workspace-surface);
-  color: var(--workspace-ink);
-  font: inherit;
-}
-
-.segment-time-fields input {
-  min-width: 0;
-  height: 27px;
-  padding: 0 6px;
-  font-size: 10px;
-}
-
-.segment-editor textarea {
-  display: block;
-  min-height: 43px;
-  margin-top: 5px;
-  padding: 7px;
-  resize: vertical;
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.segment-issue-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.segment-issue-tags span {
-  margin: 0;
-  line-height: 1.35;
-}
-
-.delivery-panel {
-  margin-top: 18px;
-  padding: 16px;
-  background: var(--workspace-surface);
-}
-
-.delivery-heading { align-items: flex-end; }
-.delivery-heading p { max-width: 450px; }
-
-.review-status-control,
-.delivery-controls > label {
-  display: grid;
-  gap: 5px;
-  color: var(--workspace-muted);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.review-status-control { min-width: 118px; }
-.review-status-control select { height: 34px; padding: 0 7px; font-size: 11px; }
-
-.delivery-controls {
-  flex-wrap: wrap;
-  margin-top: 15px;
-}
-
-.delivery-controls > label { min-width: 150px; }
-.delivery-controls .workbench-button { align-self: end; }
-
-.workbench-message {
-  margin: 12px 0 0;
-  padding: 9px 11px;
-  border-radius: 8px;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.workbench-message.error { background: oklch(0.94 0.035 28); color: var(--workspace-danger); }
-.workbench-message.success { background: var(--workspace-accent-soft); color: var(--workspace-accent); }
-
-.artifact-list {
-  flex-wrap: wrap;
-  margin-top: 14px;
-  padding-top: 13px;
-  border-top: 1px solid var(--workspace-border);
-}
-
-.artifact-list > span { margin: 0 4px 0 0; }
-
-.artifact-list button {
-  max-width: 260px;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  background: transparent;
-  color: var(--workspace-accent);
-  font-size: 10px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.workbench-button:focus-visible,
-.segment-index:focus-visible,
-.qa-issues button:focus-visible,
-.segment-filter input:focus-visible,
-.replace-tools input:focus-visible,
-.segment-time-fields input:focus-visible,
-.segment-editor textarea:focus-visible,
-.review-status-control select:focus-visible,
-.artifact-list button:focus-visible {
-  outline: 2px solid var(--workspace-accent);
-  outline-offset: 2px;
-}
-
-.settings-button:focus-visible,
-.file-card:focus-visible,
-.preset-option:focus-visible,
-.advanced-toggle:focus-visible,
-.advanced-entry:focus-visible,
-.generate-button:focus-visible,
-.task-progress button:focus-visible,
-.output-actions button:focus-visible {
-  outline: 2px solid var(--workspace-accent);
-  outline-offset: 3px;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (max-width: 900px) {
-  .action-column {
-    max-width: none;
-  }
-
-  .workbench-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .segment-list {
-    max-height: 430px;
-  }
-}
-
-@container workspace (min-width: 900px) {
-  .subtitle-layout {
-    grid-template-columns: minmax(0, 1.35fr) minmax(330px, 0.82fr);
-    gap: clamp(28px, 4vw, 48px);
-  }
-
-  .action-column {
-    position: sticky;
-    top: 0;
-  }
-}
-
-@container workspace (max-width: 620px) {
-  .simple-header {
-    align-items: stretch;
-    flex-direction: column;
-    margin-bottom: 22px;
-  }
-
-  .settings-button {
-    align-self: flex-start;
-  }
-
-  .file-card {
-    grid-template-columns: 42px minmax(0, 1fr);
-    gap: 12px;
-  }
-
-  .file-icon {
-    width: 42px;
-    height: 42px;
-  }
-
-  .replace-label {
-    grid-column: 2;
-    justify-self: start;
-  }
-
-  .analysis-card {
-    grid-template-columns: 34px minmax(0, 1fr);
-  }
-
-  .route-tag {
-    grid-column: 2;
-    justify-self: start;
-  }
-
-  .project-workbench {
-    margin-top: 26px;
-    padding: 14px;
-    border-radius: 12px;
-  }
-
-  .workbench-header,
-  .delivery-heading,
-  .segments-review-header,
-  .qa-summary,
-  .video-review-meta {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .workbench-header-actions {
-    justify-content: flex-start;
-  }
-
-  .video-review-meta {
-    gap: 3px;
-  }
-
-  .segment-time-fields {
-    grid-template-columns: 1fr;
-    gap: 3px;
-  }
-
-  .segment-time-fields span {
-    display: none;
-  }
-
-  .delivery-controls > label {
-    width: 100%;
-  }
-
-  .delivery-controls .workbench-button {
-    flex: 1 1 135px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .settings-button:hover,
-  .output-actions button:hover { transform: none; }
-}
 </style>

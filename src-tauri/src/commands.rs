@@ -7,10 +7,12 @@ use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
+use crate::download_metadata;
 use crate::downloader::{run_download, DownloadState};
 use crate::errors::AppError;
 use crate::process_utils::hidden_command;
 use crate::tool_paths;
+use crate::tool_probe::command_version;
 use crate::ytdlp;
 
 #[derive(Debug, Serialize)]
@@ -36,6 +38,8 @@ pub struct VideoFormat {
     pub filesize: Option<u64>,
     #[serde(rename = "filesizeApprox")]
     pub filesize_approx: Option<u64>,
+    #[serde(rename = "bitrateKbps")]
+    pub bitrate_kbps: Option<f64>,
     pub vcodec: Option<String>,
     pub acodec: Option<String>,
 }
@@ -184,11 +188,12 @@ pub enum DownloadMode {
 pub async fn check_dependencies() -> Result<DependencyStatus, AppError> {
     let ytdlp_path = tool_paths::ytdlp();
     let ffmpeg_path = tool_paths::ffmpeg();
-    let ytdlp_version = command_version(ytdlp_path.clone(), "--version").await;
-    let ffmpeg_version = command_version(ffmpeg_path.clone(), "-version").await;
-    let ffprobe_ok = command_version(tool_paths::ffprobe(), "-version")
-        .await
-        .is_some();
+    let (ytdlp_version, ffmpeg_version, ffprobe_version) = tokio::join!(
+        command_version(ytdlp_path.clone(), "--version"),
+        command_version(ffmpeg_path.clone(), "-version"),
+        command_version(tool_paths::ffprobe(), "-version"),
+    );
+    let ffprobe_ok = ffprobe_version.is_some();
 
     Ok(DependencyStatus {
         ytdlp_ok: ytdlp_version.is_some(),
@@ -389,6 +394,16 @@ async fn parse_video_inner(request: ParseVideoRequest) -> Result<VideoInfo, AppE
                         true,
                         cookie_src,
                     );
+                } else if download_metadata::has_downloadable_formats(&value) {
+                    return video_info_from_value(
+                        value,
+                        original_url,
+                        candidate_url,
+                        site,
+                        strategy,
+                        false,
+                        cookie_src,
+                    );
                 } else {
                     match run_parse_attempt(&candidate_url, &options, site, &strategy, false).await
                     {
@@ -479,6 +494,13 @@ fn video_info_from_value(
     is_playlist: bool,
     cookie_source: CookieSource,
 ) -> Result<VideoInfo, AppError> {
+    download_metadata::remember(
+        &resolved_url,
+        &ParseOptions {
+            cookie_source: cookie_source.clone(),
+        },
+        &value,
+    );
     let title = value
         .get("title")
         .and_then(|v| v.as_str())
@@ -601,6 +623,10 @@ fn video_info_from_value(
                     note,
                     filesize,
                     filesize_approx,
+                    bitrate_kbps: fmt
+                        .get("tbr")
+                        .or_else(|| fmt.get("abr"))
+                        .and_then(|value| value.as_f64()),
                     vcodec,
                     acodec,
                 });
@@ -759,27 +785,6 @@ pub async fn open_parent_folder(app: AppHandle, path: String) -> Result<(), AppE
     app.opener()
         .open_path(parent.to_string_lossy().to_string(), None::<&str>)
         .map_err(|error| AppError::user("打开文件夹失败。", error.to_string()))
-}
-
-async fn command_version(program: PathBuf, arg: &str) -> Option<String> {
-    let output = hidden_command(program)
-        .arg(arg)
-        .stdin(Stdio::null())
-        .output()
-        .await
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let text = if output.stdout.is_empty() {
-        String::from_utf8_lossy(&output.stderr).to_string()
-    } else {
-        String::from_utf8_lossy(&output.stdout).to_string()
-    };
-
-    text.lines().next().map(|line| line.trim().to_string())
 }
 
 pub(crate) fn validate_url(url: &str) -> Result<&str, AppError> {

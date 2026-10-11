@@ -1,6 +1,7 @@
 mod bing;
 mod cache_manager;
 mod commands;
+mod download_metadata;
 mod downloader;
 mod errors;
 mod gemini;
@@ -15,6 +16,7 @@ mod subtitle_store;
 mod subtitle_types;
 mod tool_installer;
 mod tool_paths;
+mod tool_probe;
 mod whisper;
 mod whisper_manager;
 mod ytdlp;

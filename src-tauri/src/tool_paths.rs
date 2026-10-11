@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn ytdlp() -> PathBuf {
     first_existing(
@@ -59,7 +59,49 @@ fn first_existing(env_key: &str, candidates: &[PathBuf], fallback: &str) -> Path
         }
     }
 
-    PathBuf::from(fallback)
+    resolve_executable(Path::new(fallback)).unwrap_or_else(|| PathBuf::from(fallback))
+}
+
+pub(crate) fn resolve_executable(program: &Path) -> Option<PathBuf> {
+    if program.is_file() {
+        return program.canonicalize().ok();
+    }
+    if program.components().count() != 1 {
+        return None;
+    }
+    let path = std::env::var_os("PATH")?;
+    let extensions = if cfg!(windows) {
+        std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
+    } else {
+        String::new()
+    };
+    resolve_in_directories(program, std::env::split_paths(&path), &extensions)
+}
+
+fn resolve_in_directories(
+    program: &Path,
+    directories: impl Iterator<Item = PathBuf>,
+    extensions: &str,
+) -> Option<PathBuf> {
+    for directory in directories {
+        let candidate = directory.join(program);
+        if candidate.is_file() {
+            return candidate.canonicalize().ok();
+        }
+        if program.extension().is_none() {
+            for extension in extensions
+                .split(';')
+                .filter(|extension| !extension.is_empty())
+            {
+                let candidate =
+                    directory.join(format!("{}{}", program.to_string_lossy(), extension));
+                if candidate.is_file() {
+                    return candidate.canonicalize().ok();
+                }
+            }
+        }
+    }
+    None
 }
 
 fn exe_dir() -> PathBuf {
@@ -95,5 +137,37 @@ mod tests {
         };
 
         assert_eq!(executable_name("yt-dlp"), expected);
+    }
+
+    #[test]
+    fn path_lookup_preserves_search_order_and_resolves_extensions() {
+        let root = std::env::temp_dir().join(format!("ydlite-path-{}", uuid::Uuid::new_v4()));
+        let first = root.join("first");
+        let second = root.join("second");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir(&second).unwrap();
+        for directory in [&first, &second] {
+            std::fs::write(directory.join("fixture.EXE"), b"fixture").unwrap();
+        }
+        assert_eq!(
+            resolve_in_directories(
+                Path::new("fixture"),
+                [first.clone(), second.clone()].into_iter(),
+                ".EXE;.CMD"
+            ),
+            first.join("fixture.EXE").canonicalize().ok()
+        );
+        assert_eq!(
+            resolve_in_directories(
+                Path::new("fixture.EXE"),
+                [second.clone(), first].into_iter(),
+                ".EXE"
+            ),
+            second.join("fixture.EXE").canonicalize().ok()
+        );
+        assert!(
+            resolve_in_directories(Path::new("missing"), [second].into_iter(), ".EXE").is_none()
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

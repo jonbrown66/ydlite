@@ -6,6 +6,8 @@ import eyeClosedIcon from 'iconoir/icons/eye-closed.svg?url'
 import eyeIcon from 'iconoir/icons/eye.svg?url'
 import trashIcon from 'iconoir/icons/trash.svg?url'
 import AppDialog from '@/components/ui/AppDialog.vue'
+import { modelDescription, runtimeDescription, runtimeName } from '@/lib/assetLabels'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { registerCloseGuard } from '@/lib/closeGuards'
 import { Button } from '@/components/ui/button'
 import { AppSelect } from '@/components/ui/select'
@@ -56,7 +58,7 @@ const notice = ref('')
 const error = ref('')
 const customModels = ref<string[]>([])
 const selectedProviderId = ref('openai')
-const customModelsStatus = ref('选择服务商后会直接显示该服务商的预置模型。')
+const customModelsStatus = ref('Choose a provider to load available models.')
 const whisperModels = ref<WhisperModelInfo[]>([])
 const whisperRuntimes = ref<WhisperRuntimeInfo[]>([])
 const downloadProgress = ref<Record<string, WhisperDownloadEvent>>({})
@@ -75,40 +77,40 @@ let resolveUnsavedConfirm: ((allow: boolean) => void) | undefined
 const providerPresets: ProviderPreset[] = [
   {
     id: 'openai',
-    label: 'OpenAI / ChatGPT · https://api.openai.com/v1',
+    label: 'OpenAI',
     apiBase: 'https://api.openai.com/v1',
     website: 'https://platform.openai.com/api-keys',
     models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
   },
   {
     id: 'gemini',
-    label: 'Gemini · https://generativelanguage.googleapis.com/v1beta/openai',
+    label: 'Gemini',
     apiBase: 'https://generativelanguage.googleapis.com/v1beta/openai',
     website: 'https://aistudio.google.com/apikey',
     models: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'],
   },
   {
     id: 'kimi',
-    label: 'Kimi Code · https://api.kimi.com/coding/v1',
+    label: 'Kimi Code',
     apiBase: 'https://api.kimi.com/coding/v1',
     website: 'https://www.kimi.com/code/',
     models: ['k3', 'k3-256k', 'kimi-for-coding', 'kimi-for-coding-highspeed'],
   },
   {
     id: 'glm',
-    label: 'GLM · https://api.z.ai/api/paas/v4',
+    label: 'GLM',
     apiBase: 'https://api.z.ai/api/paas/v4',
     website: 'https://open.bigmodel.cn/usercenter/apikeys',
     models: ['glm-5.3', 'glm-5.1', 'glm-5-turbo', 'glm-5'],
   },
   {
     id: 'deepseek',
-    label: 'DeepSeek · https://api.deepseek.com/v1',
+    label: 'DeepSeek',
     apiBase: 'https://api.deepseek.com/v1',
     website: 'https://platform.deepseek.com/api_keys',
     models: ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'],
   },
-  { id: 'custom', label: '自定义 OpenAI 兼容接口' },
+  { id: 'custom', label: 'Custom provider' },
 ]
 
 const processingModes: Array<{
@@ -118,13 +120,13 @@ const processingModes: Array<{
 }> = [
   {
     value: 'local_free',
-    title: '本地免费',
-    badge: '无需 Key',
+    title: 'Local · Free',
+    badge: 'No API key',
   },
   {
     value: 'local_custom',
-    title: '自定义接口',
-    badge: '高级',
+    title: 'Custom API',
+    badge: 'Advanced',
   },
 ]
 
@@ -140,7 +142,7 @@ const customModelOptions = computed(() => {
     models.unshift(settings.value.openaiModel)
   }
   if (models.length) return models.map(model => ({ value: model, label: model }))
-  return [{ value: '', label: customModelsStatus.value || '等待自动加载模型' }]
+  return [{ value: '', label: customModelsStatus.value || 'Choose a model' }]
 })
 
 function draftSignature() {
@@ -215,7 +217,7 @@ function formatBytes(bytes: number) {
 }
 
 function formatCleanupTime(value: number) {
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat('en-US', {
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',
@@ -235,7 +237,7 @@ async function cleanCache() {
       if (value !== null) localStorage.setItem(key, value)
     })
     const released = cacheStatus.value.records[0]?.releasedBytes ?? 0
-    notice.value = `缓存已清理，释放 ${formatBytes(released)}。`
+    notice.value = `Cache cleared. Freed ${formatBytes(released)}.`
   } catch (value) {
     error.value = errorText(value)
   } finally {
@@ -249,7 +251,7 @@ async function persistSettings(showNotice = true) {
   if (showNotice) notice.value = ''
   try {
     settings.value = await saveGeminiSettings({
-      // 保留旧字段的当前值以兼容已有项目；设置页不再管理专属 Gemini/GLM 凭据。
+      // Preserve legacy fields for existing projects.
       apiKey: undefined,
       defaultModel: settings.value.defaultModel,
       defaultTargetLanguage: 'zh-CN',
@@ -265,7 +267,7 @@ async function persistSettings(showNotice = true) {
     })
     openaiApiKey.value = ''
     markSaved()
-    if (showNotice) notice.value = '设置已保存。'
+    if (showNotice) notice.value = 'Settings saved.'
     return true
   } catch (value) {
     error.value = errorText(value)
@@ -285,7 +287,8 @@ async function testCustomConnection() {
   error.value = ''
   notice.value = ''
   try {
-    notice.value = await testOpenAiCompatibleConnection()
+    await testOpenAiCompatibleConnection()
+    notice.value = 'Connection verified.'
   } catch (value) {
     error.value = errorText(value)
   } finally {
@@ -313,8 +316,8 @@ function selectProvider(value: string | number) {
   settings.value.openaiModel = ''
   customModels.value = provider.models ?? []
   customModelsStatus.value = provider.models?.length
-    ? `已准备 ${provider.models.length} 个 ${provider.label.split(' · ')[0]} 模型。`
-    : '自定义接口请在保存 Key 后测试连接。'
+    ? `Choose a model.`
+    : 'Save your API key to test the connection.'
 }
 
 async function refreshWhisperAssets() {
@@ -334,7 +337,7 @@ async function installModel(id: string) {
   try {
     await downloadWhisperModel(id)
     await refreshWhisperAssets()
-    notice.value = '本地 Whisper 模型下载完成。'
+    notice.value = 'Whisper model installed.'
   } catch (value) {
     error.value = errorText(value)
   }
@@ -356,7 +359,7 @@ async function installRuntime(id: string) {
   try {
     await downloadWhisperRuntime(id)
     await refreshWhisperAssets()
-    notice.value = 'Whisper 运行组件安装完成。'
+    notice.value = 'Whisper runtime installed.'
   } catch (value) {
     error.value = errorText(value)
   }
@@ -390,7 +393,7 @@ onMounted(async () => {
     syncSelectedProvider()
     customModels.value = selectedProvider.value.models ?? []
     if (customModels.value.length) {
-      customModelsStatus.value = `已准备 ${customModels.value.length} 个 ${selectedProvider.value.label.split(' · ')[0]} 模型。`
+      customModelsStatus.value = `Choose a model.`
     }
     await applyRequestedSetup(false)
     await Promise.all([
@@ -425,21 +428,19 @@ watch(() => settings.value.openaiApiBase, () => {
   syncSelectedProvider()
   customModels.value = selectedProvider.value.models ?? []
   customModelsStatus.value = customModels.value.length
-    ? `已准备 ${customModels.value.length} 个 ${selectedProvider.value.label.split(' · ')[0]} 模型。`
-    : '自定义接口请在保存 Key 后测试连接。'
+    ? `Choose a model.`
+    : 'Save your API key to test the connection.'
 })
 </script>
 
 <template>
   <section class="workspace-page settings-page">
-    <header class="page-heading">
-      <h1>设置</h1>
-    </header>
+    <PageHeader title="Settings" />
 
     <div class="settings-sheet">
       <section>
         <fieldset class="processing-mode-list">
-          <legend>处理方式</legend>
+          <legend>Processing mode</legend>
           <label
             v-for="mode in processingModes"
             :key="mode.value"
@@ -452,48 +453,48 @@ watch(() => settings.value.openaiApiBase, () => {
                 <strong>{{ mode.title }}</strong>
               </span>
             </span>
-            <span class="mode-badge">{{ mode.badge }}</span>
           </label>
         </fieldset>
       </section>
 
       <section v-if="settings.processingMode === 'local_custom'" ref="providerSetupSection">
+        <h2 class="settings-section-title">AI provider</h2>
         <div class="settings-fields">
           <label class="wide">
-            <span>服务商 / API Base URL</span>
+            <span>Provider</span>
             <AppSelect
               :model-value="selectedProviderId"
               :options="providerOptions"
-              aria-label="服务商和 API Base URL"
+              aria-label="Provider"
               @update:model-value="selectProvider"
             />
             <small v-if="selectedProvider.website" class="field-hint">
-              <a :href="selectedProvider.website" target="_blank" rel="noreferrer">打开 {{ selectedProvider.label.split(' · ')[0] }} 官方 API 平台</a>
+              <a :href="selectedProvider.website" target="_blank" rel="noreferrer">{{ selectedProvider.label }} API dashboard ↗</a>
             </small>
           </label>
-          <label v-if="selectedProviderId === 'custom'" class="wide">
-            <span>自定义 API Base URL</span>
-            <input v-model="settings.openaiApiBase" type="url" placeholder="https://api.example.com/v1" />
+          <label class="wide">
+            <span>Base URL</span>
+            <input v-model="settings.openaiApiBase" :readonly="selectedProviderId !== 'custom'" type="url" placeholder="https://api.example.com/v1" />
           </label>
           <label class="wide">
-            <span>模型</span>
+            <span>Model</span>
             <AppSelect
               v-model="settings.openaiModel"
               :options="customModelOptions"
               :disabled="!customModels.length && !settings.openaiModel"
-              aria-label="可选模型"
+              aria-label="Model"
             />
-            <small class="field-hint">{{ customModelsStatus }}</small>
+
           </label>
           <label class="wide">
             <span>API Key</span>
             <span class="key-input">
-              <input v-model="openaiApiKey" :type="showOpenaiApiKey ? 'text' : 'password'" autocomplete="off" :placeholder="settings.hasOpenaiApiKey ? '已安全保存；留空不会修改' : '输入 API Key'" />
+              <input v-model="openaiApiKey" :type="showOpenaiApiKey ? 'text' : 'password'" autocomplete="off" :placeholder="settings.hasOpenaiApiKey ? 'Saved securely. Leave blank to keep.' : 'Enter API key'" />
               <button
                 type="button"
                 class="key-visibility"
-                :aria-label="showOpenaiApiKey ? '隐藏 API Key' : '显示 API Key'"
-                :title="showOpenaiApiKey ? '隐藏 API Key' : '显示 API Key'"
+                :aria-label="showOpenaiApiKey ? 'Hide API key' : 'Show API key'"
+                :title="showOpenaiApiKey ? 'Hide API key' : 'Show API key'"
                 @click="showOpenaiApiKey = !showOpenaiApiKey"
               >
                 <i class="icon" :style="iconStyle(showOpenaiApiKey ? eyeClosedIcon : eyeIcon)" />
@@ -501,7 +502,7 @@ watch(() => settings.value.openaiApiBase, () => {
             </span>
           </label>
           <Button variant="outline" :disabled="saving || testingCustom || !canTestCustom" @click="testCustomConnection">
-            {{ testingCustom ? '正在测试' : '保存并测试连接' }}
+            {{ testingCustom ? 'Testing…' : 'Save and test' }}
           </Button>
         </div>
       </section>
@@ -510,7 +511,7 @@ watch(() => settings.value.openaiApiBase, () => {
         <div class="whisper-assets">
           <div class="asset-section-heading">
             <div>
-              <strong>识别模型</strong>
+              <strong>Speech recognition</strong>
             </div>
           </div>
           <div class="asset-grid">
@@ -519,38 +520,38 @@ watch(() => settings.value.openaiApiBase, () => {
                 <input v-model="settings.whisperModel" type="radio" :value="model.id" />
                 <span><strong>{{ model.name }}</strong><small>{{ model.downloadSize }}</small></span>
               </label>
-              <p>{{ model.description }}</p>
+              <p>{{ modelDescription(model.id) }}</p>
               <div v-if="progressFor('model', model.id)?.status === 'downloading'" class="asset-progress">
                 <i :style="{ width: `${progressFor('model', model.id)?.percent || 0}%` }" />
                 <span>{{ Math.round(progressFor('model', model.id)?.percent || 0) }}%</span>
               </div>
               <div class="asset-actions">
-                <span :class="{ installed: model.installed }">{{ model.installed ? '已安装' : '未下载' }}</span>
+                <span :class="{ installed: model.installed }">{{ model.installed ? 'Installed' : 'Not installed' }}</span>
                 <Button v-if="!model.installed" size="sm" variant="outline" :disabled="['downloading', 'extracting'].includes(progressFor('model', model.id)?.status || '')" @click="installModel(model.id)">
-                  {{ progressFor('model', model.id)?.status === 'downloading' ? '下载中' : `下载 ${model.downloadSize}` }}
+                  {{ progressFor('model', model.id)?.status === 'downloading' ? 'Downloading…' : `Download ${model.downloadSize}` }}
                 </Button>
-                <Button v-else size="sm" variant="ghost" @click="removeModel(model.id)">删除</Button>
+                <Button v-else size="sm" variant="ghost" @click="removeModel(model.id)">Remove</Button>
               </div>
             </article>
           </div>
 
           <div class="asset-section-heading runtime-heading">
             <div>
-              <strong>运行组件</strong>
+              <strong>Runtime</strong>
             </div>
           </div>
           <div class="runtime-grid">
             <article v-for="runtime in whisperRuntimes" :key="runtime.id" class="runtime-row">
               <label>
                 <input v-model="settings.whisperRuntime" type="radio" :value="runtime.id" />
-                <span><strong>{{ runtime.name }}</strong><small>{{ runtime.description }} · {{ runtime.downloadSize }}</small></span>
+                <span><strong>{{ runtimeName(runtime.id) }}</strong><small>{{ runtimeDescription(runtime.id) }} · {{ runtime.downloadSize }}</small></span>
               </label>
               <div v-if="progressFor('runtime', runtime.id)?.status === 'downloading'" class="asset-progress compact">
                 <i :style="{ width: `${progressFor('runtime', runtime.id)?.percent || 0}%` }" />
               </div>
-              <span v-if="runtime.installed" class="installed">已安装</span>
+              <span v-if="runtime.installed" class="installed">Installed</span>
               <Button v-else size="sm" variant="outline" :disabled="['downloading', 'extracting'].includes(progressFor('runtime', runtime.id)?.status || '')" @click="installRuntime(runtime.id)">
-                {{ progressFor('runtime', runtime.id)?.status === 'extracting' ? '安装中' : progressFor('runtime', runtime.id)?.status === 'downloading' ? `${Math.round(progressFor('runtime', runtime.id)?.percent || 0)}%` : `下载 ${runtime.downloadSize}` }}
+                {{ progressFor('runtime', runtime.id)?.status === 'extracting' ? 'Installing…' : progressFor('runtime', runtime.id)?.status === 'downloading' ? `${Math.round(progressFor('runtime', runtime.id)?.percent || 0)}%` : `Download ${runtime.downloadSize}` }}
               </Button>
             </article>
           </div>
@@ -558,22 +559,23 @@ watch(() => settings.value.openaiApiBase, () => {
       </section>
 
       <section>
+        <h2 class="settings-section-title">Storage</h2>
         <div class="cache-manager">
           <div class="cache-summary">
             <div>
-              <span>可清理缓存</span>
-              <strong>{{ cacheStatus ? formatBytes(cacheStatus.cacheBytes) : '计算中…' }}</strong>
+              <span>Cache size</span>
+              <strong>{{ cacheStatus ? formatBytes(cacheStatus.cacheBytes) : 'Calculating…' }}</strong>
             </div>
             <Button variant="outline" :disabled="clearingCache || !cacheStatus" @click="cleanCache">
               <i class="icon" :style="iconStyle(trashIcon)" />
-              {{ clearingCache ? '清理中' : '清理缓存' }}
+              {{ clearingCache ? 'Clearing…' : 'Clear cache' }}
             </Button>
           </div>
           <p v-if="cacheStatus" class="preserved-size">
-            已保留：模型 {{ formatBytes(cacheStatus.modelBytes) }} · 项目 {{ formatBytes(cacheStatus.projectBytes) }}
+            Models {{ formatBytes(cacheStatus.modelBytes) }} · Projects {{ formatBytes(cacheStatus.projectBytes) }}
           </p>
           <div v-if="cacheStatus?.records.length" class="cleanup-history">
-            <span>清理记录</span>
+            <span>Cleanup history</span>
             <ol>
               <li v-for="record in cacheStatus.records.slice(0, 3)" :key="record.id">
                 <time>{{ formatCleanupTime(record.cleanedAt) }}</time>
@@ -581,797 +583,107 @@ watch(() => settings.value.openaiApiBase, () => {
               </li>
             </ol>
           </div>
-          <p v-else class="empty-history">暂无清理记录</p>
         </div>
       </section>
 
+    </div>
       <footer class="settings-actions">
-        <span class="save-state" role="status">{{ saving ? '正在保存…' : hasUnsavedChanges ? '有未保存的修改' : '设置已保存' }}</span>
+        <span v-if="saving || hasUnsavedChanges" class="save-state" role="status">{{ saving ? 'Saving…' : 'Unsaved changes' }}</span>
         <Button :disabled="saving || !hasUnsavedChanges" @click="save">
           <i class="icon" :style="iconStyle(checkIcon)" />
-          {{ saving ? '正在保存' : '保存设置' }}
+          {{ saving ? 'Saving…' : 'Save changes' }}
         </Button>
       </footer>
-    </div>
 
     <p v-if="error" class="inline-alert error" role="alert">{{ error }}</p>
     <p v-if="notice" class="inline-alert success" role="status">{{ notice }}</p>
 
-    <AppDialog :open="showUnsavedConfirm" title="保存修改？" :busy="saving" @close="settleUnsavedConfirm(false)">
-      <p>离开前的修改尚未保存。</p>
+    <AppDialog :open="showUnsavedConfirm" title="Save changes?" :busy="saving" @close="settleUnsavedConfirm(false)">
+      <p>You have unsaved changes.</p>
       <div class="modal-actions">
-        <Button variant="ghost" :disabled="saving" @click="settleUnsavedConfirm(false)">继续编辑</Button>
-        <Button variant="outline" :disabled="saving" @click="discardAndContinue">放弃修改</Button>
-        <Button :disabled="saving" @click="saveAndContinue">{{ saving ? '正在保存' : '保存并离开' }}</Button>
+        <Button variant="ghost" :disabled="saving" @click="settleUnsavedConfirm(false)">Keep editing</Button>
+        <Button variant="outline" :disabled="saving" @click="discardAndContinue">Discard changes</Button>
+        <Button :disabled="saving" @click="saveAndContinue">{{ saving ? 'Saving…' : 'Save and leave' }}</Button>
       </div>
     </AppDialog>
   </section>
 </template>
 
 <style scoped>
-.settings-setup-overview {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.8fr);
-  align-items: center;
-  gap: 24px;
-  width: 100%;
-  max-width: 960px;
-  margin: 0 auto 28px;
-  padding: 18px 20px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 12px;
-  background: var(--workspace-surface);
-}
 
-.settings-setup-overview > div:first-child > span,
-.settings-setup-overview strong,
-.settings-setup-overview p {
-  display: block;
-}
+.settings-page { display: flex; flex-direction: column; overflow: hidden; }
+.settings-page > .page-header { flex-shrink: 0; }
+.settings-sheet { flex: 1; min-block-size: 0; inline-size: 100%; max-inline-size: 1040px; margin-inline: auto; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0; margin-block: 1px; border-radius: var(--radius-panel); background: var(--surface); box-shadow: 0 0 0 1px var(--border); scrollbar-width: thin; }
+.settings-sheet > section { margin: 0; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.settings-sheet > section:last-child { border-bottom: 0; }
+.settings-section-title { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+.section-description { margin: 0 0 16px; color: var(--muted); line-height: 1.5; }
+.processing-mode-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,14rem),1fr)); gap: 12px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.processing-mode-list legend { font-size: 16px; font-weight: 600; margin-bottom: 12px; padding: 0; }
+.processing-mode-list .section-description { grid-column: 1 / -1; margin: 0; }
+.processing-mode { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-control); cursor: pointer; }
+.processing-mode:hover { background: var(--surface-hover); }
+.processing-mode.selected { border-color: var(--primary-line); background: var(--primary-soft); }
+.processing-mode:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
+.processing-mode input:focus-visible { outline: none; }
+.processing-mode input { margin: 0; }
+.mode-copy { flex: 1; }
+.mode-copy strong { font-weight: 500; }
+.mode-badge { color: var(--muted); white-space: nowrap; }
+.settings-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.settings-fields label { display: grid; gap: 6px; min-width: 0; }
+.settings-fields label.wide { grid-column: 1 / -1; }
+.settings-fields label > span:first-child { color: var(--muted); }
+.settings-fields input { width: 100%; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.settings-fields input:hover:not(:disabled):not(:read-only) { border-color: var(--border-strong); }
+.settings-fields input:read-only { background: var(--surface-subtle); color: var(--muted); }
+.field-hint { color: var(--muted); font-size: 14px; font-weight: 400; overflow-wrap: anywhere; }
+.field-hint a { color: var(--primary); text-decoration: none; }
+.field-hint a:hover { text-decoration: underline; }
+.key-input { position: relative; display: block; }
+.key-input input { padding-right: 40px; }
+.key-visibility { position: absolute; right: 4px; top: 2px; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); }
+.key-visibility:hover { background: var(--surface-hover); }
+.settings-fields > button { width: fit-content; }
+.asset-section-heading { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.asset-section-heading strong { font-size: 16px; font-weight: 600; }
+.asset-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,18rem),1fr)); gap: 12px; }
+.asset-card { display: flex; flex-direction: column; min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-control); }
+.asset-card.selected { border-color: var(--primary-line); background: var(--surface-subtle); }
+.asset-card:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
+.asset-card input:focus-visible { outline: none; }
+.asset-card > label, .runtime-row > label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.asset-card input, .runtime-row input { margin-top: 4px; }
+.asset-card label strong, .asset-card label small, .runtime-row label strong, .runtime-row label small { display: block; }
+.asset-card label strong, .runtime-row label strong { font-weight: 500; }
+.asset-card small, .runtime-row small { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.asset-card > p { margin: 12px 0; color: var(--muted); }
+.asset-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 12px; }
+.asset-actions > span { color: var(--muted); }
+.asset-actions .installed, .installed { color: var(--success); }
+.runtime-heading { margin-top: 24px; margin-bottom: 12px; }
+.runtime-grid { display: grid; }
+.runtime-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+.runtime-row:first-child { padding-top: 0; }
+.runtime-row:last-child { padding-bottom: 0; border-bottom: 0; }
+.runtime-row label { flex: 1 1 220px; min-width: 0; }
+.runtime-row button, .runtime-row > span { flex-shrink: 0; }
+.asset-progress { position: relative; height: 24px; margin-top: 8px; }
+.asset-progress i { display: block; height: 4px; border-radius: 4px; background: var(--primary); }
+.asset-progress span { display: block; margin-top: 2px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.asset-progress.compact { width: 80px; height: 4px; margin: 0; background: var(--border); }
+.cache-summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.cache-summary span, .cache-summary strong { display: block; }
+.cache-summary span { color: var(--muted); }
+.cache-summary strong { margin-top: 4px; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.preserved-size, .empty-history { color: var(--muted); margin: 12px 0 0; }
+.cleanup-history { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.cleanup-history > span { font-weight: 500; }
+.cleanup-history ol { margin: 8px 0 0; padding: 0; list-style: none; }
+.cleanup-history li { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; color: var(--muted); }
+.settings-actions { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; max-width: 1040px; margin: 16px auto 0; padding: 12px 16px; border: 0; border-radius: var(--radius-panel); background: var(--surface); box-shadow: var(--control-shadow); }
+.save-state { color: var(--muted); }
+.settings-actions > button { margin-left: auto; }
+.settings-page > .inline-alert { flex-shrink: 0; margin-bottom: 0; }
 
-.settings-setup-overview > div:first-child > span {
-  color: var(--workspace-subtle);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.settings-setup-overview > div:first-child > strong {
-  margin-top: 4px;
-  color: var(--workspace-ink);
-  font-size: 16px;
-  letter-spacing: -0.01em;
-}
-
-.settings-setup-overview p {
-  margin: 5px 0 0;
-  color: var(--workspace-muted);
-  font-size: 11px;
-  line-height: 1.55;
-}
-
-.setup-status {
-  display: grid;
-  grid-template-columns: 9px minmax(0, 1fr);
-  align-items: start;
-  gap: 9px;
-  padding: 12px 13px;
-  border-radius: 9px;
-  background: var(--workspace-surface-muted);
-}
-
-.setup-status > i {
-  width: 8px;
-  height: 8px;
-  margin-top: 4px;
-  border-radius: 50%;
-  background: var(--warning);
-}
-
-.setup-status.ready {
-  background: var(--success-soft);
-}
-
-.setup-status.ready > i {
-  background: var(--workspace-success);
-}
-
-.setup-status strong,
-.setup-status small {
-  display: block;
-}
-
-.setup-status strong {
-  color: var(--workspace-ink);
-  font-size: 11px;
-}
-
-.setup-status small {
-  margin-top: 3px;
-  color: var(--workspace-muted);
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.whisper-assets {
-  min-width: 0;
-}
-
-.processing-mode-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  gap: 10px;
-}
-
-.processing-mode-list legend {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-}
-
-.processing-mode {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: start;
-  gap: 12px;
-  min-height: 64px;
-  padding: 12px 14px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 10px;
-  background: var(--workspace-surface);
-  cursor: pointer;
-  transition: border-color 140ms ease-out, background-color 140ms ease-out, transform 140ms var(--workspace-ease);
-}
-
-.processing-mode:hover {
-  border-color: var(--workspace-border-strong);
-  background: var(--workspace-surface-muted);
-  transform: translateY(-1px);
-}
-
-.processing-mode.selected {
-  border-color: var(--workspace-border);
-  background: var(--workspace-surface);
-  box-shadow: none;
-}
-
-.processing-mode input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--workspace-accent);
-}
-
-.mode-copy {
-  display: grid;
-  min-width: 0;
-  gap: 5px;
-}
-
-.mode-title-line {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.mode-copy strong {
-  color: var(--workspace-ink);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.processing-mode.selected .mode-copy strong {
-  color: var(--workspace-accent);
-}
-
-.mode-copy small {
-  color: var(--workspace-muted);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.mode-copy em {
-  overflow: hidden;
-  color: var(--workspace-subtle);
-  font-size: 10px;
-  font-style: normal;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.processing-mode.selected .mode-copy small {
-  color: color-mix(in oklch, var(--workspace-accent) 55%, var(--workspace-ink));
-}
-
-.mode-badge {
-  grid-column: 2;
-  justify-self: start;
-  margin-top: 0;
-  padding: 3px 6px;
-  border-radius: 5px;
-  background: var(--workspace-surface-muted);
-  color: var(--workspace-muted);
-  font-size: 10px;
-  font-weight: 700;
-  text-align: center;
-}
-
-.mode-recommended {
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: color-mix(in oklch, var(--workspace-accent-soft) 78%, var(--workspace-surface));
-  color: var(--workspace-accent);
-  font-size: 9px;
-  font-weight: 700;
-}
-
-.mode-badge.recommended {
-  background: color-mix(in oklch, var(--workspace-accent-soft) 72%, var(--workspace-surface));
-  color: var(--workspace-accent);
-}
-
-.settings-sheet {
-  overflow: visible;
-  border: 0;
-}
-
-.settings-sheet > section {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-  padding: 26px 0;
-  border-top: 1px solid var(--workspace-border);
-}
-
-.settings-sheet > section:first-child {
-  padding-top: 0;
-  border-top: 0;
-}
-
-.setting-intro {
-  position: sticky;
-  top: 0;
-  align-self: start;
-  padding-top: 4px;
-}
-
-.setting-intro h2 {
-  margin: 0 0 8px;
-  color: var(--workspace-ink);
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.setting-intro p {
-  color: var(--workspace-muted);
-  font-size: 12px;
-  line-height: 1.65;
-}
-
-.settings-fields {
-  gap: 16px 14px;
-}
-
-.settings-fields label {
-  gap: 8px;
-  color: var(--workspace-muted);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.settings-fields input,
-.settings-fields select {
-  height: 40px;
-  padding: 0 12px;
-  border-color: var(--workspace-border);
-  border-radius: 9px;
-  background: var(--workspace-surface);
-  color: var(--workspace-ink);
-  font-size: 13px;
-  transition: border-color 150ms ease-out, box-shadow 150ms ease-out, background-color 150ms ease-out;
-}
-
-.settings-fields input:hover,
-.settings-fields select:hover {
-  border-color: var(--workspace-border-strong);
-}
-
-.settings-fields input:focus,
-.settings-fields select:focus {
-  border-color: var(--workspace-accent);
-  outline: 0;
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--workspace-accent) 16%, transparent);
-}
-
-.field-hint {
-  color: var(--workspace-subtle);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.45;
-}
-
-.field-hint a {
-  color: var(--workspace-accent);
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.field-hint a:hover,
-.field-hint a:focus-visible {
-  text-decoration: underline;
-  outline: none;
-}
-
-.key-input {
-  position: relative;
-  display: block;
-}
-
-.key-input input {
-  width: 100%;
-  padding-right: 44px;
-}
-
-.key-visibility {
-  position: absolute;
-  top: 50%;
-  right: 5px;
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--workspace-muted);
-  cursor: pointer;
-  transform: translateY(-50%);
-}
-
-.key-visibility:hover,
-.key-visibility:focus-visible {
-  background: var(--workspace-surface-muted);
-  color: var(--workspace-accent);
-  outline: none;
-}
-
-.asset-section-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 18px;
-  margin: 0 0 9px;
-}
-
-.asset-section-heading.runtime-heading {
-  margin-top: 22px;
-}
-
-.asset-section-heading strong,
-.asset-section-heading small,
-.asset-section-heading > span {
-  display: block;
-}
-
-.asset-section-heading strong {
-  color: var(--workspace-ink);
-  font-size: 12px;
-}
-
-.asset-section-heading small,
-.asset-section-heading > span {
-  margin-top: 4px;
-  color: var(--workspace-subtle);
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.asset-section-heading > span {
-  max-width: 45%;
-  margin: 0;
-  overflow: hidden;
-  color: var(--workspace-muted);
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.asset-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0;
-  overflow: hidden;
-  border: 1px solid var(--workspace-border);
-  border-radius: var(--radius-panel);
-}
-
-.asset-card {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(190px, 0.8fr) minmax(220px, 1.2fr) auto;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-  min-height: 72px;
-  padding: 12px 14px;
-  border: 0;
-  border-bottom: 1px solid var(--workspace-border);
-  border-radius: 0;
-  background: var(--workspace-surface);
-  transition: background-color 160ms ease-out, box-shadow 160ms ease-out;
-}
-
-.asset-card:last-child {
-  border-bottom: 0;
-}
-
-.asset-card.selected {
-  background: var(--workspace-surface);
-  box-shadow: none;
-}
-
-.asset-card.selected strong {
-  color: var(--workspace-accent);
-}
-
-.asset-card label,
-.runtime-row label {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  cursor: pointer;
-}
-
-.asset-card input,
-.runtime-row input {
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  accent-color: var(--workspace-accent);
-}
-
-.asset-card label span,
-.runtime-row label span {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.asset-card strong,
-.runtime-row strong {
-  color: var(--workspace-ink);
-  font-size: 13px;
-}
-
-.asset-card small,
-.runtime-row small {
-  color: var(--workspace-subtle);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.asset-card p {
-  min-height: 0;
-  margin: 0;
-  color: var(--workspace-muted);
-  font-size: 11px;
-  line-height: 1.6;
-}
-
-.asset-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin-left: 0;
-}
-
-.asset-actions > span,
-.runtime-row > span {
-  color: var(--workspace-subtle);
-  font-size: 11px;
-}
-
-.installed {
-  color: var(--workspace-success) !important;
-  font-weight: 700;
-}
-
-.asset-progress {
-  position: relative;
-  height: 5px;
-  grid-column: 1 / -1;
-  margin: -5px 0 3px;
-  border-radius: 99px;
-  background: var(--workspace-border);
-}
-
-.asset-progress i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--workspace-accent);
-  transition: width 300ms var(--workspace-ease);
-}
-
-.asset-progress span {
-  position: absolute;
-  right: 0;
-  top: -18px;
-  color: var(--workspace-muted);
-  font-size: 10px;
-}
-
-.runtime-grid {
-  display: grid;
-  gap: 0;
-  margin-top: 0;
-  overflow: hidden;
-  border: 1px solid var(--workspace-border);
-  border-radius: var(--radius-panel);
-  background: color-mix(in oklch, var(--workspace-surface) 72%, transparent);
-}
-
-.runtime-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 120px auto;
-  align-items: center;
-  gap: 14px;
-  min-height: 58px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--workspace-border);
-  transition: background-color 140ms ease-out;
-}
-
-.runtime-row:last-child {
-  border-bottom: 0;
-}
-
-.runtime-row:hover {
-  background: var(--workspace-surface);
-}
-
-.asset-progress.compact {
-  margin: 0;
-}
-
-.settings-actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  gap: 10px;
-  margin-top: 26px;
-  padding: 14px 0;
-  border: 0;
-  background: var(--workspace-surface);
-  box-shadow: none;
-}
-
-.unsaved-modal p {
-  margin: 0;
-  color: var(--workspace-muted);
-  font-size: 13px;
-}
-
-.cache-manager {
-  min-width: 0;
-  padding: 2px 0;
-}
-
-.cache-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  min-height: 50px;
-}
-
-.cache-summary > div {
-  display: grid;
-  gap: 4px;
-}
-
-.cache-summary span,
-.cleanup-history > span {
-  color: var(--workspace-muted);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.cache-summary strong {
-  color: var(--workspace-ink);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.preserved-size,
-.empty-history {
-  margin: 9px 0 0;
-  color: var(--workspace-subtle);
-  font-size: 11px;
-}
-
-.cleanup-history {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 14px;
-  margin-top: 20px;
-  padding-top: 14px;
-  border-top: 1px solid var(--workspace-border);
-}
-
-.cleanup-history ol {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cleanup-history li {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  color: var(--workspace-muted);
-  font-size: 11px;
-}
-
-.cleanup-history li strong {
-  color: var(--workspace-ink);
-  font-weight: 650;
-}
-
-.key-status {
-  font-size: 11px;
-}
-
-.key-status i {
-  width: 8px;
-  height: 8px;
-}
-
-@media (max-width: 1060px) {
-  .settings-sheet > section {
-    grid-template-columns: 180px minmax(0, 1fr);
-    gap: 30px;
-  }
-
-  .asset-card {
-    grid-template-columns: minmax(180px, 0.8fr) minmax(180px, 1fr);
-  }
-
-  .asset-actions {
-    grid-column: 1 / -1;
-    justify-content: flex-end;
-  }
-}
-
-@media (max-width: 900px) {
-  .settings-setup-overview {
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
-
-  .settings-sheet > section {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
-
-  .setting-intro {
-    position: static;
-  }
-
-  .asset-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .asset-card {
-    grid-template-columns: 1fr;
-  }
-
-  .asset-actions {
-    grid-column: auto;
-    justify-content: space-between;
-  }
-
-  .runtime-row {
-    grid-template-columns: 1fr auto;
-  }
-
-  .runtime-row .asset-progress {
-    grid-column: 1 / -1;
-  }
-}
-
-@container workspace (max-width: 780px) {
-  .settings-setup-overview {
-    grid-template-columns: 1fr;
-    gap: 14px;
-    margin-bottom: 22px;
-    padding: 15px;
-  }
-
-  .processing-mode-list {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-sheet > section {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-
-  .setting-intro {
-    position: static;
-  }
-
-  .asset-card {
-    grid-template-columns: 1fr;
-  }
-
-  .asset-actions {
-    grid-column: auto;
-    justify-content: space-between;
-  }
-
-  .runtime-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .runtime-row .asset-progress {
-    grid-column: 1 / -1;
-  }
-
-  .settings-actions {
-    flex-wrap: wrap;
-  }
-
-  .key-status {
-    flex: 1 0 100%;
-    margin-right: 0;
-  }
-}
-
-@container workspace (max-width: 520px) {
-  .processing-mode {
-    min-height: 0;
-  }
-
-  .mode-badge {
-    grid-column: 2;
-    justify-self: start;
-  }
-
-  .runtime-row {
-    grid-template-columns: 1fr;
-  }
-
-  .asset-section-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 5px;
-  }
-
-  .asset-section-heading > span {
-    max-width: 100%;
-    text-align: left;
-  }
-
-  .runtime-row > .installed,
-  .runtime-row > button {
-    justify-self: start;
-  }
-
-  .settings-actions > button {
-    flex: 1 1 auto;
-  }
-}
 </style>

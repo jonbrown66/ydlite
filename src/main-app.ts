@@ -5,6 +5,8 @@ import router from './router'
 import './styles/tailwind.css'
 import './styles.css'
 
+document.documentElement.lang = 'en'
+
 const app = createApp(App)
   .use(createPinia())
   .use(router)

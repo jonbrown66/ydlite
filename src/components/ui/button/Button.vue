@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<Props>(), { type: 'button' })
 
 <template>
   <button
+    data-slot="button"
     :type="type"
     :class="cn(buttonVariants({ variant, size }), props.class)"
   >

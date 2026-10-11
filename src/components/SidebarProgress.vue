@@ -12,6 +12,7 @@ const task = computed(() => activity.visibleTasks.find(item =>
   ['active', 'cancelling'].includes(item.state) && item.kind === 'download',
 ) ?? activity.visibleTasks.find(item => ['active', 'cancelling'].includes(item.state)))
 const progress = computed(() => task.value?.percent ?? 0)
+const activeCount = computed(() => activity.visibleTasks.filter(item => ['active', 'cancelling'].includes(item.state)).length)
 
 function iconStyle(url: string) {
   return { '--icon-url': `url("${url}")` }
@@ -38,19 +39,20 @@ function openTask() {
       v-if="task"
       class="sidebar-progress"
       type="button"
-      :title="`${task.title} · ${task.detail}`"
-      aria-label="查看当前任务进度"
+      :title="`${activeCount} tasks · ${task.title} · ${task.detail}`"
+      aria-label="View task progress"
       @click="openTask"
     >
       <span class="sidebar-progress-head">
         <span class="sidebar-progress-name">
-          <i class="icon" :style="iconStyle(taskIcon(task))" />
-          <span>{{ task.title }}</span>
+          <i v-if="task.percent === null" class="progress-spinner" aria-hidden="true" />
+          <i v-else class="icon" :style="iconStyle(taskIcon(task))" />
+          <span>{{ activeCount > 1 ? `${activeCount} tasks · ` : '' }}{{ task.title }}</span>
         </span>
         <strong>{{ task.percent === null ? '…' : `${Math.round(progress)}%` }}</strong>
       </span>
       <span class="sidebar-progress-track">
-        <i :style="task.percent === null ? undefined : { width: `${progress}%` }" />
+        <i :style="{ width: `${task.percent === null ? 0 : progress}%` }" />
       </span>
     </button>
   </Transition>
@@ -65,16 +67,15 @@ function openTask() {
   padding: 8px 10px 9px;
   border: 0;
   border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--workspace-accent-soft) 68%, var(--workspace-surface));
+  background: var(--surface);
+  box-shadow: var(--control-shadow);
   color: var(--workspace-muted);
   text-align: left;
   cursor: pointer;
-  transition: background-color 160ms ease-out, transform 180ms var(--workspace-ease);
 }
 
 .sidebar-progress:hover {
-  background: color-mix(in oklch, var(--workspace-accent-soft) 90%, var(--workspace-surface));
-  transform: translateY(-1px);
+  background: var(--surface-hover);
 }
 
 .sidebar-progress-head {
@@ -83,7 +84,7 @@ function openTask() {
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
-  font-size: 10px;
+  font-size: 14px;
 }
 
 .sidebar-progress-name {
@@ -102,13 +103,13 @@ function openTask() {
 .sidebar-progress-name .icon {
   width: 13px;
   height: 13px;
-  color: var(--workspace-accent);
+  color: var(--workspace-ink);
 }
 
 .sidebar-progress-head strong {
   flex: 0 0 auto;
   color: var(--workspace-accent);
-  font-size: 10px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -129,10 +130,6 @@ function openTask() {
   transition: width 220ms var(--workspace-ease);
 }
 
-.sidebar-progress-track i:not([style]) {
-  animation: sidebar-progress-slide 1.2s ease-in-out infinite;
-}
-
 .sidebar-progress-enter-active,
 .sidebar-progress-leave-active {
   transition: opacity 180ms ease-out, transform 220ms var(--workspace-ease);
@@ -144,14 +141,4 @@ function openTask() {
   transform: translateY(5px);
 }
 
-@keyframes sidebar-progress-slide {
-  0% { transform: translateX(-110%); }
-  55%, 100% { transform: translateX(310%); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sidebar-progress-track i:not([style]) {
-    animation: none;
-  }
-}
 </style>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref, useId, watch } from 'vue'
 import checkIcon from 'iconoir/icons/check.svg?url'
-import chevronIcon from 'iconoir/icons/nav-arrow-down.svg?url'
+import DisclosureChevron from '@/components/ui/DisclosureChevron.vue'
 
 export type AppSelectOption = {
   value: string | number
@@ -31,7 +31,7 @@ const selectedIndex = computed(() => {
   return index
 })
 const selectedLabel = computed(() =>
-  props.options[selectedIndex.value]?.label ?? '请选择',
+  props.options[selectedIndex.value]?.label ?? 'Select an option',
 )
 
 function iconStyle(url: string) {
@@ -162,7 +162,7 @@ onBeforeUnmount(() => {
       @keydown="onKeydown"
     >
       <span>{{ selectedLabel }}</span>
-      <i class="select-chevron" :style="iconStyle(chevronIcon)" />
+      <DisclosureChevron :open="open" />
     </button>
 
     <Teleport to="body">
@@ -204,31 +204,32 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  height: 40px;
+  height: 36px;
   padding: 0 10px 0 12px;
-  border: 1px solid var(--workspace-border);
+  border: 0;
   border-radius: var(--radius-control);
-  outline: 0;
   background: var(--workspace-surface);
   color: var(--workspace-ink);
-  font-size: 13px;
-  font-weight: 620;
+  font-size: 14px;
+  font-weight: 400;
   text-align: left;
   cursor: pointer;
-  transition: border-color 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out;
+  transition: none;
+  box-shadow: var(--control-shadow);
 }
 
 .app-select-trigger:hover:not(:disabled) {
-  border-color: var(--workspace-border-strong);
   background: var(--workspace-surface-muted);
+  box-shadow: 0 0 0 1px var(--border-strong), 0 1px 2px rgb(24 24 27 / 5%);
 }
 
-.app-select.open .app-select-trigger,
-.app-select-trigger:focus-visible {
-  border-color: var(--workspace-accent);
+.app-select.open .app-select-trigger {
   background: var(--workspace-surface);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--workspace-accent) 16%, transparent);
+  box-shadow: 0 0 0 1px var(--primary-line), 0 1px 2px rgb(24 24 27 / 5%);
 }
+
+.app-select .app-select-trigger:focus-visible { box-shadow: none; }
+.app-select-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .app-select-trigger:disabled {
   opacity: 0.48;
@@ -267,10 +268,10 @@ onBeforeUnmount(() => {
   overscroll-behavior: contain;
   scrollbar-color: var(--workspace-border-strong) transparent;
   scrollbar-width: thin;
-  border: 1px solid var(--workspace-border);
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--workspace-surface);
-  box-shadow: var(--workspace-shadow);
+  box-shadow: 0 0 0 1px var(--workspace-border), var(--workspace-shadow);
 }
 
 .app-select-menu::-webkit-scrollbar {
@@ -293,22 +294,22 @@ onBeforeUnmount(() => {
   min-height: 36px;
   padding: 0 9px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-option);
   background: transparent;
-  color: var(--workspace-muted);
-  font-size: 12px;
+  color: var(--workspace-ink);
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
 }
 
 .app-select-option.active {
-  background: var(--workspace-surface-muted);
+  background: var(--surface-hover);
   color: var(--workspace-ink);
 }
 
 .app-select-option.selected {
-  color: var(--workspace-accent);
-  font-weight: 700;
+  color: var(--workspace-ink);
+  font-weight: 500;
 }
 
 .select-check {
@@ -317,13 +318,14 @@ onBeforeUnmount(() => {
 
 .select-pop-enter-active,
 .select-pop-leave-active {
-  transition: opacity 120ms ease-out, transform 150ms var(--workspace-ease);
+  transform-origin: top center;
+  transition: opacity 140ms ease-out, transform 160ms var(--workspace-ease);
 }
 
 .select-pop-enter-from,
 .select-pop-leave-to {
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(-4px) scale(0.98);
 }
 
 @media (prefers-reduced-motion: reduce) {

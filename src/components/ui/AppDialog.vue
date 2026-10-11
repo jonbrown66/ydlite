@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+import xmarkIcon from 'iconoir/icons/xmark.svg?url'
+const closeIconStyle = { '--icon-url': `url("${xmarkIcon}")` }
 
 const props = defineProps<{ open: boolean; title: string; busy?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -60,11 +62,18 @@ onBeforeUnmount(release)
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="modal-backdrop" @click.self="!busy && emit('close')">
+    <Transition name="dialog">
+    <div v-show="open" class="modal-backdrop" :inert="!open" @click.self="!busy && emit('close')">
       <section ref="panel" class="modal" role="dialog" aria-modal="true" :aria-labelledby="titleId" :aria-busy="busy" tabindex="-1">
-        <h2 :id="titleId">{{ title }}</h2>
-        <slot />
+        <header class="modal-header">
+          <h2 :id="titleId">{{ title }}</h2>
+          <button class="modal-close" type="button" aria-label="Close dialog" :disabled="busy" @click="emit('close')">
+            <i class="icon" aria-hidden="true" :style="closeIconStyle" />
+          </button>
+        </header>
+        <div class="modal-content"><slot /></div>
       </section>
     </div>
+    </Transition>
   </Teleport>
 </template>

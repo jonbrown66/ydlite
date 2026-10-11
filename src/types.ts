@@ -19,6 +19,7 @@ export type VideoFormat = {
   note?: string | null
   filesize?: number | null
   filesizeApprox?: number | null
+  bitrateKbps?: number | null
   vcodec?: string | null
   acodec?: string | null
 }
@@ -85,6 +86,11 @@ export type DownloadProgressEvent = {
   line?: string | null
   message?: string | null
   filePath?: string | null
+  metrics?: {
+    downloadedBytes?: number | null
+    totalBytes?: number | null
+    totalIsEstimate: boolean
+  } | null
 }
 
 export type ToolInstallEvent = {

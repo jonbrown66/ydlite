@@ -20,15 +20,15 @@ function kindIcon(task: ActivityTask) {
 }
 
 function kindLabel(task: ActivityTask) {
-  if (task.kind === 'download') return '下载'
-  if (task.kind === 'setup') return '准备'
-  return '字幕'
+  if (task.kind === 'download') return 'Download'
+  if (task.kind === 'setup') return 'Setup'
+  return 'Subtitles'
 }
 
 function queueLabel(task: ActivityTask) {
   const queue = task.queue
   if (!queue || queue.total <= 1) return ''
-  return `第 ${queue.current}/${queue.total} 项 · 完成 ${queue.completed}${queue.failed ? ` · 失败 ${queue.failed}` : ''}`
+  return `${queue.current}/${queue.total} · Completed ${queue.completed}${queue.failed ? ` · Failed ${queue.failed}` : ''}`
 }
 
 function openTask(task: ActivityTask) {
@@ -40,7 +40,7 @@ function openTask(task: ActivityTask) {
 </script>
 
 <template>
-  <TransitionGroup v-if="activity.visibleTasks.length" name="activity-task" tag="section" class="global-task-tray" aria-live="polite" aria-label="任务状态">
+  <TransitionGroup v-if="activity.visibleTasks.length" name="activity-task" tag="section" class="global-task-tray" aria-live="polite" aria-label="Task status">
     <article v-for="task in activity.visibleTasks" :key="task.id" class="global-task" :class="[`is-${task.state}`, `is-${task.kind}`]">
       <span class="global-task-kind" :title="kindLabel(task)">
         <i class="icon" :style="iconStyle(kindIcon(task))" />
@@ -53,7 +53,7 @@ function openTask(task: ActivityTask) {
         </span>
         <span class="global-task-meta">
           <b v-if="task.percent !== null">{{ Math.round(task.percent) }}%</b>
-          <span v-else>{{ task.state === 'completed' ? '完成' : task.state === 'failed' ? '失败' : task.state === 'cancelled' ? '已取消' : '处理中' }}</span>
+          <span v-else>{{ task.state === 'completed' ? 'Completed' : task.state === 'failed' ? 'Failed' : task.state === 'cancelled' ? 'Cancelled' : 'Processing' }}</span>
         </span>
       </button>
 
@@ -62,8 +62,8 @@ function openTask(task: ActivityTask) {
       </div>
 
       <div class="global-task-actions">
-        <button v-if="task.cancellable" class="global-task-action" type="button" @click="activity.cancelTask(task.id)">取消</button>
-        <button v-else-if="!['active', 'cancelling'].includes(task.state)" class="global-task-dismiss" type="button" aria-label="关闭任务提示" @click="activity.dismissTask(task.id)">
+        <button v-if="task.cancellable" class="global-task-action" type="button" @click="activity.cancelTask(task.id)">Cancel</button>
+        <button v-else-if="!['active', 'cancelling'].includes(task.state)" class="global-task-dismiss" type="button" aria-label="Dismiss notification" @click="activity.dismissTask(task.id)">
           <i class="icon" :style="iconStyle(xmarkIcon)" />
         </button>
       </div>
@@ -84,38 +84,39 @@ function openTask(task: ActivityTask) {
 }
 
 .global-task {
+  --task-line: var(--border);
   position: relative;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   min-height: 72px;
   overflow: hidden;
-  padding: 11px 11px 11px 13px;
-  border: 1px solid var(--border-strong);
+  padding: 14px 12px 16px 16px;
+  border: 0;
   border-radius: var(--radius-panel);
-  background: color-mix(in oklch, var(--surface) 97%, var(--canvas));
-  box-shadow: var(--shadow-float);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--task-line), var(--shadow-float);
   pointer-events: auto;
 }
 
 .global-task.is-completed {
-  border-color: color-mix(in oklch, var(--success) 34%, var(--border));
+  --task-line: color-mix(in srgb, var(--success) 24%, var(--border));
 }
 
 .global-task.is-failed,
 .global-task.is-cancelled {
-  border-color: color-mix(in oklch, var(--danger) 30%, var(--border));
+  --task-line: color-mix(in srgb, var(--danger) 24%, var(--border));
 }
 
 .global-task-kind {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-control);
-  background: var(--primary);
-  color: var(--surface);
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .is-setup .global-task-kind {
@@ -148,6 +149,7 @@ function openTask(task: ActivityTask) {
   color: inherit;
   text-align: left;
   cursor: pointer;
+  border-radius: var(--radius-option);
 }
 
 .global-task-main:focus-visible {
@@ -170,25 +172,26 @@ function openTask(task: ActivityTask) {
 
 .global-task-heading strong {
   color: var(--ink);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .global-task-heading small {
   color: var(--subtle);
-  font-size: 10px;
+  font-size: 14px;
 }
 
 .global-task-meta {
+  margin-top: 4px;
   margin-right: 3px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 
 .global-task-meta b {
   color: var(--ink);
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .global-task-progress {
@@ -242,8 +245,8 @@ function openTask(task: ActivityTask) {
   border-radius: 7px;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
 }
 

@@ -63,43 +63,42 @@ function clampPercent(value: number | null | undefined) {
 
 function downloadStatusLabel(event: DownloadProgressEvent) {
   const labels: Record<DownloadProgressEvent['status'], string> = {
-    starting: '正在准备下载',
-    downloading: '正在下载',
-    processing: '正在处理文件',
-    finished: '下载已完成',
-    cancelled: '下载已取消',
-    error: '下载失败',
+    starting: 'Preparing download…',
+    downloading: 'Downloading…',
+    processing: 'Processing file…',
+    finished: 'Download complete',
+    cancelled: 'Download cancelled',
+    error: 'Download failed',
     log: '',
   }
-  return event.message || labels[event.status]
+  return labels[event.status] || event.message || ''
 }
 
 function subtitleStageLabel(event: SubtitleProgressEvent) {
-  if (event.message && event.stage === 'rate_limited') return event.message
   const labels: Record<string, string> = {
-    extracting: '正在准备音频',
-    uploading: '正在上传处理音频',
-    transcribing: '正在识别语音',
-    whisper_transcription: '正在识别语音',
-    gemini_transcription: '正在识别语音',
-    translate: '正在翻译字幕',
-    bing_translation: '正在翻译字幕',
-    custom_ai_translation: '正在翻译字幕',
-    glm_translation: '正在翻译字幕',
-    gemini_translation: '正在翻译字幕',
-    polish: '正在自动校对',
-    glm_polish: '正在自动校对',
-    gemini_polish: '正在自动校对',
-    burning: '正在生成字幕视频',
-    completed: '正在整理结果',
-    rate_limited: '正在等待服务恢复',
+    extracting: 'Preparing audio…',
+    uploading: 'Uploading audio…',
+    transcribing: 'Transcribing…',
+    whisper_transcription: 'Transcribing…',
+    gemini_transcription: 'Transcribing…',
+    translate: 'Translating…',
+    bing_translation: 'Translating…',
+    custom_ai_translation: 'Translating…',
+    glm_translation: 'Translating…',
+    gemini_translation: 'Translating…',
+    polish: 'Reviewing…',
+    glm_polish: 'Reviewing…',
+    gemini_polish: 'Reviewing…',
+    burning: 'Rendering video…',
+    completed: 'Finalizing…',
+    rate_limited: 'Waiting for service…',
   }
-  return labels[event.stage] || event.message || '正在处理字幕'
+  return labels[event.stage] || event.message || 'Processing subtitles…'
 }
 
 function setupTitle(event: ToolInstallEvent | WhisperDownloadEvent) {
-  if ('tool' in event) return event.tool === 'yt-dlp' ? '安装 yt-dlp' : '安装 FFmpeg'
-  return event.assetType === 'model' ? '下载 Whisper 模型' : '安装 Whisper 运行组件'
+  if ('tool' in event) return event.tool === 'yt-dlp' ? 'Install yt-dlp' : 'Install FFmpeg'
+  return event.assetType === 'model' ? 'Install Whisper model' : 'Install Whisper runtime'
 }
 
 function setupTarget(event: ToolInstallEvent | WhisperDownloadEvent): ActivityTarget {
@@ -181,8 +180,8 @@ export const useActivityStore = defineStore('activity', () => {
       : 0
     return upsertTask('download', {
       kind: 'download',
-      title: input.title || '视频下载',
-      detail: queue ? `队列第 ${queue.current}/${queue.total} 项` : '正在准备下载',
+      title: input.title || 'Downloads',
+      detail: queue ? `Queue ${queue.current}/${queue.total}` : 'Preparing download…',
       percent,
       target: 'download',
       cancellable: true,
@@ -195,8 +194,8 @@ export const useActivityStore = defineStore('activity', () => {
     const current = findTask('download')
     return upsertTask('download', {
       kind: 'download',
-      title: title || current?.title || '视频下载',
-      detail: `队列第 ${queue.current}/${queue.total} 项 · 完成 ${queue.completed} · 失败 ${queue.failed}`,
+      title: title || current?.title || 'Downloads',
+      detail: `Queue ${queue.current}/${queue.total} · Completed ${queue.completed} · Failed ${queue.failed}`,
       percent: clampPercent(((queue.completed + queue.failed) / Math.max(queue.total, 1)) * 100),
       target: 'download',
       cancellable: true,
@@ -212,7 +211,7 @@ export const useActivityStore = defineStore('activity', () => {
     const task = upsertTask('download', {
       kind: 'download',
       title: current.title,
-      detail: input.detail || (state === 'completed' ? '下载队列已完成' : state === 'cancelled' ? '下载队列已取消' : '下载队列有未完成的任务'),
+      detail: input.detail || (state === 'completed' ? 'Download queue complete' : state === 'cancelled' ? 'Download queue cancelled' : 'Some downloads are unfinished'),
       percent: state === 'completed' ? 100 : current.percent,
       target: 'download',
       cancellable: false,
@@ -227,8 +226,8 @@ export const useActivityStore = defineStore('activity', () => {
     clearRetention(id)
     return upsertTask(id, {
       kind: 'subtitle',
-      title: input.title || '自动字幕',
-      detail: input.detail || '正在准备字幕任务',
+      title: input.title || 'Subtitles',
+      detail: input.detail || 'Preparing subtitles…',
       percent: 0,
       target: 'subtitles',
       projectId: input.projectId,
@@ -245,7 +244,7 @@ export const useActivityStore = defineStore('activity', () => {
     const task = upsertTask(id, {
       kind: 'subtitle',
       title: current.title,
-      detail: input.detail || (state === 'completed' ? '字幕任务已完成' : state === 'cancelled' ? '字幕任务已取消' : '字幕任务未完成'),
+      detail: input.detail || (state === 'completed' ? 'Subtitles complete' : state === 'cancelled' ? 'Subtitles cancelled' : 'Subtitles unfinished'),
       percent: state === 'completed' ? 100 : current.percent,
       target: 'subtitles',
       projectId,
@@ -260,8 +259,8 @@ export const useActivityStore = defineStore('activity', () => {
     const current = findTask(id)
     return upsertTask(id, {
       kind: 'subtitle',
-      title: patch.title || current?.title || '自动字幕',
-      detail: patch.detail || current?.detail || '正在处理字幕',
+      title: patch.title || current?.title || 'Subtitles',
+      detail: patch.detail || current?.detail || 'Processing subtitles…',
       percent: patch.percent ?? current?.percent ?? 0,
       target: 'subtitles',
       projectId,
@@ -272,17 +271,16 @@ export const useActivityStore = defineStore('activity', () => {
 
   function handleDownloadProgress(event: DownloadProgressEvent) {
     if (event.status === 'log') return
-    const current = findTask('download') ?? beginDownload({ title: '视频下载' })
+    const current = findTask('download') ?? beginDownload({ title: 'Downloads' })
     const itemPercent = clampPercent(event.percent)
     const queue = current.queue
-    const candidatePercent = queue?.active
+    const unknown = ['starting', 'processing'].includes(event.status) || itemPercent === null;
+    const candidatePercent = unknown ? null : queue?.active
       ? itemPercent === null
-        ? current.percent
+        ? null
         : clampPercent(((queue.completed + queue.failed + itemPercent / 100) / Math.max(queue.total, 1)) * 100)
-      : itemPercent ?? current.percent
-    const percent = candidatePercent === null
-      ? current.percent
-      : Math.max(current.percent ?? 0, candidatePercent)
+      : itemPercent
+    const percent = candidatePercent
     const terminal = ['finished', 'cancelled', 'error'].includes(event.status)
     const keepsQueueActive = Boolean(queue?.active)
 
@@ -297,7 +295,7 @@ export const useActivityStore = defineStore('activity', () => {
     upsertTask('download', {
       kind: 'download',
       title: current.title,
-      detail: terminal && queue ? '正在继续队列中的下一项' : downloadStatusLabel(event),
+      detail: terminal && queue ? 'Starting next download…' : downloadStatusLabel(event),
       percent,
       target: 'download',
       cancellable: true,
@@ -310,7 +308,7 @@ export const useActivityStore = defineStore('activity', () => {
     const current = findTask(`subtitle:${event.projectId}`)
     if (current && !['active', 'cancelling'].includes(current.state)) return
     updateSubtitle(event.projectId, {
-      title: current?.title || '自动字幕',
+      title: current?.title || 'Subtitles',
       detail: subtitleStageLabel(event),
       percent: clampPercent(event.percent),
     })
@@ -322,7 +320,7 @@ export const useActivityStore = defineStore('activity', () => {
     const task = upsertTask(setupTaskId(event), {
       kind: 'setup',
       title: setupTitle(event),
-      detail: event.message || (state === 'completed' ? '准备完成' : '正在准备'),
+      detail: state === 'completed' ? 'Ready' : state === 'failed' ? 'Installation failed' : event.status === 'extracting' ? 'Installing…' : 'Downloading…',
       percent: clampPercent(event.percent),
       target: setupTarget(event),
       cancellable: false,
@@ -330,7 +328,7 @@ export const useActivityStore = defineStore('activity', () => {
     })
     if (state !== 'active') retainThenDismiss(task)
     if (isToolEvent && state === 'completed') {
-      // 已完成的工具安装不再影响后续下载任务。
+      // Completed installations do not affect subsequent downloads.
       task.cancellable = false
     }
   }
@@ -373,7 +371,7 @@ export const useActivityStore = defineStore('activity', () => {
     upsertTask(id, {
       kind: task.kind,
       title: task.title,
-      detail: '正在取消任务…',
+      detail: 'Cancelling…',
       percent: task.percent,
       target: task.target,
       projectId: task.projectId,
@@ -392,7 +390,7 @@ export const useActivityStore = defineStore('activity', () => {
       const failed = upsertTask(id, {
         kind: task.kind,
         title: task.title,
-        detail: '无法取消任务，请稍后重试。',
+        detail: 'Unable to cancel task. Try again.',
         percent: task.percent,
         target: task.target,
         projectId: task.projectId,

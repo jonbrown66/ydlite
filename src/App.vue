@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import brandMark from '@/assets/brand-mark.svg'
 import clockIcon from 'iconoir/icons/clock.svg?url'
 import downloadIcon from 'iconoir/icons/download.svg?url'
-import minusIcon from 'iconoir/icons/minus.svg?url'
 import settingsIcon from 'iconoir/icons/settings.svg?url'
 import translateIcon from 'iconoir/icons/translate.svg?url'
 import navArrowLeftIcon from 'iconoir/icons/nav-arrow-left.svg?url'
-import xmarkIcon from 'iconoir/icons/xmark.svg?url'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import { canCloseWindow } from '@/lib/closeGuards'
 import { Button } from '@/components/ui/button'
@@ -25,6 +24,9 @@ let resolveClose: ((allow: boolean) => void) | undefined
 let unlistenClose: (() => void) | undefined
 let disposed = false
 
+function usePointerMotion() { document.documentElement.dataset.interaction = 'pointer' }
+function useKeyboardMotion() { document.documentElement.dataset.interaction = 'keyboard' }
+
 function settleClose(allow: boolean) {
   showCloseConfirm.value = false
   resolveClose?.(allow)
@@ -40,7 +42,7 @@ async function checkClose() {
       showCloseConfirm.value = true
       return await new Promise<boolean>(resolve => { resolveClose = resolve })
     } catch {
-      closeError.value = '无法检查未保存的内容，请稍后再试。'
+      closeError.value = 'Unable to check unsaved changes. Try again.'
       return false
     }
   })()
@@ -49,15 +51,15 @@ async function checkClose() {
 
 async function requestWindowClose() {
   try { await appWindow.close() }
-  catch { closeError.value = '无法关闭窗口，请稍后再试。' }
+  catch { closeError.value = 'Unable to close the window. Try again.' }
 }
 
 let unlistenResize: (() => void) | undefined
 
 const navItems = [
-  { name: 'download', label: '视频下载', icon: downloadIcon },
-  { name: 'subtitles', label: '自动字幕', icon: translateIcon },
-  { name: 'tasks', label: '任务记录', icon: clockIcon },
+  { name: 'download', label: 'Downloads', icon: downloadIcon },
+  { name: 'subtitles', label: 'Subtitles', icon: translateIcon },
+  { name: 'tasks', label: 'History', icon: clockIcon },
 ] as const
 
 function iconStyle(url: string) {
@@ -80,6 +82,8 @@ async function toggleMaximize() {
 }
 
 onMounted(async () => {
+  document.addEventListener('pointerdown', usePointerMotion, true)
+  document.addEventListener('keydown', useKeyboardMotion, true)
   void activity.startListening()
   unlistenClose = await appWindow.onCloseRequested(async event => {
     if (closePending) { event.preventDefault(); return }
@@ -91,6 +95,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', usePointerMotion, true)
+  document.removeEventListener('keydown', useKeyboardMotion, true)
+  delete document.documentElement.dataset.interaction
   disposed = true
   unlistenResize?.()
   unlistenClose?.()
@@ -100,32 +107,36 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="app-frame" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+  <main class="app-frame" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'window-maximized': maximized }">
     <header class="app-titlebar" data-tauri-drag-region @dblclick="toggleMaximize">
       <div class="app-brand" data-tauri-drag-region>
         <span class="app-brand-mark" data-tauri-drag-region>
-          <span class="brand-glyph">Y</span>
+          <img :src="brandMark" width="26" height="26" alt="" draggable="false" />
         </span>
         <strong data-tauri-drag-region>YDLite</strong>
       </div>
       <div class="titlebar-drag-area" data-tauri-drag-region />
-      <div class="window-actions" @dblclick.stop>
-        <Button size="icon" variant="ghost" aria-label="最小化窗口" title="最小化" @click="appWindow.minimize()">
-          <i class="icon" :style="iconStyle(minusIcon)" />
-        </Button>
-        <Button size="icon" variant="ghost" :aria-label="maximized ? '还原窗口' : '最大化窗口'" :title="maximized ? '还原' : '最大化'" @click="toggleMaximize">
-          <span class="maximize-icon" :class="{ restore: maximized }" />
-        </Button>
-        <Button class="close-window" size="icon" variant="ghost" aria-label="关闭窗口" title="关闭" @click="requestWindowClose">
-          <i class="icon" :style="iconStyle(xmarkIcon)" />
-        </Button>
+      <div class="window-actions" role="group" aria-label="Window controls" @dblclick.stop>
+        <button class="window-control" type="button" aria-label="Minimize window" title="Minimize" @click="appWindow.minimize()">
+          <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8.5h10" /></svg>
+        </button>
+        <button class="window-control" type="button" :aria-label="maximized ? 'Restore window' : 'Maximize window'" :title="maximized ? 'Restore' : 'Maximize'" @click="toggleMaximize">
+          <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <path v-if="maximized" d="M5.5 5.5v-3h8v8h-3m-8-5h8v8h-8z" />
+            <path v-else d="M3.5 3.5h9v9h-9z" />
+          </svg>
+        </button>
+        <button class="window-control close-window" type="button" aria-label="Close window" title="Close" @click="requestWindowClose">
+          <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m3.5 3.5 9 9m0-9-9 9" /></svg>
+        </button>
       </div>
     </header>
 
     <div class="app-body">
       <aside class="app-sidebar">
         <div class="sidebar-main">
-          <nav aria-label="主要功能">
+          <span class="sidebar-caption">Workspace</span>
+          <nav aria-label="Main navigation">
             <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="sidebar-link" :title="item.label" :aria-label="item.label">
               <i class="icon" :style="iconStyle(item.icon)" />
               <span>{{ item.label }}</span>
@@ -134,13 +145,13 @@ onBeforeUnmount(() => {
         </div>
         <div class="sidebar-footer">
           <SidebarProgress />
-          <RouterLink :to="{ name: 'settings' }" class="sidebar-link settings-link" title="设置" aria-label="设置">
+          <RouterLink :to="{ name: 'settings' }" class="sidebar-link settings-link" title="Settings" aria-label="Settings">
             <i class="icon" :style="iconStyle(settingsIcon)" />
-            <span>设置</span>
+            <span>Settings</span>
           </RouterLink>
-          <button class="sidebar-collapse-toggle" type="button" :aria-label="sidebarCollapsed ? '展开侧栏' : '收起侧栏'" :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'" @click="toggleSidebar">
+          <button class="sidebar-collapse-toggle" type="button" :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" @click="toggleSidebar">
             <i class="icon" :style="iconStyle(navArrowLeftIcon)" />
-            <span>{{ sidebarCollapsed ? '展开' : '收起侧栏' }}</span>
+            <span>{{ sidebarCollapsed ? 'Expand' : 'Collapse sidebar' }}</span>
           </button>
         </div>
       </aside>
@@ -156,11 +167,11 @@ onBeforeUnmount(() => {
       </section>
     </div>
     <p v-if="closeError" class="window-error" role="alert">{{ closeError }}</p>
-    <AppDialog :open="showCloseConfirm" title="仍有任务正在运行" @close="settleClose(false)">
-      <p>关闭窗口会退出应用，未完成的任务可能中断。你可以返回任务页，等待完成或先取消任务。</p>
+    <AppDialog :open="showCloseConfirm" title="Tasks are still running" @close="settleClose(false)">
+      <p>Closing the app will interrupt unfinished tasks.</p>
       <div class="modal-actions">
-        <Button variant="outline" @click="settleClose(false)">继续等待</Button>
-        <Button variant="danger" @click="settleClose(true)">仍然关闭</Button>
+        <Button variant="outline" @click="settleClose(false)">Keep working</Button>
+        <Button variant="danger" @click="settleClose(true)">Close anyway</Button>
       </div>
     </AppDialog>
   </main>

@@ -18,7 +18,7 @@
         "minWidth": 720,
         "minHeight": 560,
         "decorations": false,
-        "backgroundColor": "#edf1f6"
+        "backgroundColor": "#f7f7f8"
       }
     ],
     "security": {
@@ -32,6 +32,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.ico"]
+    "icon": ["icons/icon.ico"],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
+      }
+    }
   }
 }

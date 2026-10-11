@@ -4,20 +4,20 @@ import { cva } from 'class-variance-authority'
 export { default as Button } from './Button.vue'
 
 export const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition-[color,background-color,border-color,box-shadow,opacity] duration-150 outline-none disabled:pointer-events-none disabled:opacity-45 focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+  'ui-button inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-ui-control text-sm font-medium disabled:pointer-events-none disabled:opacity-45',
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90',
-        secondary: 'bg-muted text-foreground hover:bg-border',
-        outline: 'border border-border bg-surface text-foreground shadow-xs hover:bg-muted',
-        ghost: 'text-muted-foreground hover:bg-muted hover:text-foreground',
-        danger: 'bg-danger text-primary-foreground hover:bg-danger/90',
+        default: 'ui-button-primary',
+        secondary: 'ui-button-secondary',
+        outline: 'ui-button-outline',
+        ghost: 'ui-button-ghost',
+        danger: 'ui-button-danger',
       },
       size: {
-        default: 'h-10 px-4',
-        sm: 'h-9 px-3 text-xs',
-        icon: 'size-10 p-0',
+        default: 'h-9 px-3.5',
+        sm: 'h-8 px-3',
+        icon: 'size-9 p-0',
       },
     },
     defaultVariants: {

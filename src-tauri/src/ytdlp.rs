@@ -2,6 +2,7 @@ use crate::commands::DownloadMode;
 
 pub const OUTPUT_TEMPLATE: &str = "%(title).200B.%(ext)s";
 pub const PROGRESS_PLAN_PREFIX: &str = "__YDLITE_PLAN__";
+pub const PROGRESS_PREFIX: &str = "__YDLITE_PROGRESS__";
 const GENERIC_IMPERSONATE_ARGS: [&str; 2] = ["--extractor-args", "generic:impersonate"];
 const CONCURRENT_FRAGMENTS: &str = "8";
 const BEST_COMPATIBLE_FORMAT: &str =
@@ -72,6 +73,8 @@ pub fn download_args(
         [
             "--no-playlist",
             "--newline",
+            "--progress",
+            "--no-simulate",
             "-N",
             CONCURRENT_FRAGMENTS,
             "--no-warnings",
@@ -88,6 +91,10 @@ pub fn download_args(
     args.push(format!(
         "before_dl:{PROGRESS_PLAN_PREFIX}%(requested_formats.0.format_id)s|%(requested_formats.0.filesize,requested_formats.0.filesize_approx)s|%(requested_formats.1.format_id)s|%(requested_formats.1.filesize,requested_formats.1.filesize_approx)s"
     ));
+    args.extend([
+        "--progress-template".to_string(),
+        format!("download:{PROGRESS_PREFIX}%(info.format_id)s|%(progress.{{status,downloaded_bytes,total_bytes,total_bytes_estimate,speed,eta}})j"),
+    ]);
     args.extend(
         ["-o", OUTPUT_TEMPLATE, "-P", dir]
             .into_iter()
@@ -141,7 +148,7 @@ fn mode_args(mode: &DownloadMode, custom_format: Option<&str>) -> Vec<String> {
             if let Some(fmt) = custom_format {
                 vec![
                     "-f".to_string(),
-                    format!("{}+ba[ext=m4a]/{}+bestaudio/best/{}", fmt, fmt, fmt),
+                    format!("{fmt}[acodec!=none]/{fmt}+ba[ext=m4a]/{fmt}+bestaudio/{fmt}/best"),
                     "--merge-output-format".to_string(),
                     "mp4".to_string(),
                 ]
@@ -208,6 +215,10 @@ mod tests {
             .windows(2)
             .any(|pair| pair == ["-f", BEST_COMPATIBLE_FORMAT]));
         assert!(args.iter().any(|arg| arg == "--newline"));
+        assert!(args.iter().any(|arg| arg == "--progress"));
+        assert!(args.iter().any(|arg| arg == "--no-simulate"));
+        assert!(args.windows(2).any(|pair| pair[0] == "--progress-template"
+            && pair[1].starts_with("download:__YDLITE_PROGRESS__")));
         assert!(args
             .windows(2)
             .any(|pair| pair == ["-N", CONCURRENT_FRAGMENTS]));
@@ -262,8 +273,11 @@ mod tests {
             &YtdlpOptions::default(),
         );
 
-        assert!(args
-            .windows(2)
-            .any(|pair| { pair == ["-f", "137+ba[ext=m4a]/137+bestaudio/best/137",] }));
+        assert!(args.windows(2).any(|pair| {
+            pair == [
+                "-f",
+                "137[acodec!=none]/137+ba[ext=m4a]/137+bestaudio/137/best",
+            ]
+        }));
     }
 }
