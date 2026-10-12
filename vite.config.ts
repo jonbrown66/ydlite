@@ -15,8 +15,11 @@ export default defineConfig(({ mode }) => {
           order: 'pre',
           handler(html) {
             if (!isTauriBuild) return html
+              .replace(/<style>[\s\S]*?<\/style>/, '')
+              .replace(/    <div class="startup-shell"[\s\S]*?(?=    <script type="module")/, '')
             return html
-              .replace('<html lang="zh-CN">', '<html lang="zh-CN" class="tauri-shell-pending">')
+              .replace('<html lang="en">', '<html lang="en" class="tauri-shell-pending">')
+              .replace(/<noscript>[\s\S]*?<\/noscript>/, '')
               .replace('/src/main-web.ts', '/src/main-app.ts')
           },
         },

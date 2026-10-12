@@ -1,0 +1,29 @@
+{
+  "Version": "0.2.0",
+  "Date": "2026-10-13",
+  "Timezone": "Asia/Kuala_Lumpur",
+  "LocalRustChecks": 45,
+  "PublicRustCheck": "Bilibili Best/720p/MP3 playable",
+  "NodeChecks": [
+    "download-queue",
+    "persistent-queue",
+    "download-storage",
+    "download-options"
+  ],
+  "Browser": "Codex in-app browser, mocked Tauri IPC",
+  "Builds": [
+    "build:app via tauri build",
+    "build website",
+    "tauri build EXE/MSI"
+  ],
+  "NsisInstallUpgrade": "passed, output sentinel preserved",
+  "Msi": "administrative extraction passed; installation not exercised",
+  "WebsitePreview": "production 1180/390px, images loaded, download response hashes match",
+  "Online": "0.1.0 subtitle version observed; no deployment",
+  "Remaining": [
+    "authenticated downloads",
+    "native WebView2 / DPI / real profile migration",
+    "MSI installation and upgrade",
+    "authorized push and publication"
+  ]
+}

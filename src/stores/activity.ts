@@ -2,27 +2,26 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   cancelDownload,
-  cancelSubtitleTask,
   onDownloadProgress,
-  onSubtitleProgress,
   onToolInstallProgress,
-  onWhisperDownloadProgress,
 } from '@/api/tauri'
-import type { DownloadProgressEvent, SubtitleProgressEvent, ToolInstallEvent, WhisperDownloadEvent } from '@/types'
+import type { DownloadProgressEvent, ToolInstallEvent } from '@/types'
 
-export type ActivityTaskKind = 'download' | 'subtitle' | 'setup'
+export type ActivityTaskKind = 'download' | 'setup'
 export type ActivityTaskState = 'active' | 'cancelling' | 'completed' | 'failed' | 'cancelled'
-export type ActivityTarget = 'download' | 'subtitles' | 'settings'
+export type ActivityTarget = 'download' | 'settings'
 
 type DownloadQueueState = {
   total: number
   current: number
   completed: number
   failed: number
+  cancelled?: number
   active: boolean
 }
 
 export type ActivityTask = {
+  requestId?: string
   id: string
   kind: ActivityTaskKind
   state: ActivityTaskState
@@ -30,21 +29,15 @@ export type ActivityTask = {
   detail: string
   percent: number | null
   target: ActivityTarget
-  projectId?: string
   cancellable: boolean
   queue?: DownloadQueueState
   updatedAt: number
 }
 
 type DownloadInput = {
+  requestId?: string
   title: string
   queue?: Omit<DownloadQueueState, 'active'> & { active?: boolean }
-}
-
-type SubtitleInput = {
-  projectId: string
-  title: string
-  detail?: string
 }
 
 type FinishInput = {
@@ -72,41 +65,6 @@ function downloadStatusLabel(event: DownloadProgressEvent) {
     log: '',
   }
   return labels[event.status] || event.message || ''
-}
-
-function subtitleStageLabel(event: SubtitleProgressEvent) {
-  const labels: Record<string, string> = {
-    extracting: 'Preparing audio…',
-    uploading: 'Uploading audio…',
-    transcribing: 'Transcribing…',
-    whisper_transcription: 'Transcribing…',
-    gemini_transcription: 'Transcribing…',
-    translate: 'Translating…',
-    bing_translation: 'Translating…',
-    custom_ai_translation: 'Translating…',
-    glm_translation: 'Translating…',
-    gemini_translation: 'Translating…',
-    polish: 'Reviewing…',
-    glm_polish: 'Reviewing…',
-    gemini_polish: 'Reviewing…',
-    burning: 'Rendering video…',
-    completed: 'Finalizing…',
-    rate_limited: 'Waiting for service…',
-  }
-  return labels[event.stage] || event.message || 'Processing subtitles…'
-}
-
-function setupTitle(event: ToolInstallEvent | WhisperDownloadEvent) {
-  if ('tool' in event) return event.tool === 'yt-dlp' ? 'Install yt-dlp' : 'Install FFmpeg'
-  return event.assetType === 'model' ? 'Install Whisper model' : 'Install Whisper runtime'
-}
-
-function setupTarget(event: ToolInstallEvent | WhisperDownloadEvent): ActivityTarget {
-  return 'tool' in event ? 'download' : 'settings'
-}
-
-function setupTaskId(event: ToolInstallEvent | WhisperDownloadEvent) {
-  return 'tool' in event ? `tool:${event.tool}` : `whisper:${event.assetType}:${event.id}`
 }
 
 export const useActivityStore = defineStore('activity', () => {
@@ -176,9 +134,10 @@ export const useActivityStore = defineStore('activity', () => {
       ? { ...input.queue, active: input.queue.active ?? true }
       : undefined
     const percent = queue
-      ? clampPercent(((queue.completed + queue.failed) / Math.max(queue.total, 1)) * 100)
+      ? clampPercent(((queue.completed + queue.failed + (queue.cancelled || 0)) / Math.max(queue.total, 1)) * 100)
       : 0
     return upsertTask('download', {
+      requestId: input.requestId,
       kind: 'download',
       title: input.title || 'Downloads',
       detail: queue ? `Queue ${queue.current}/${queue.total}` : 'Preparing download…',
@@ -190,13 +149,14 @@ export const useActivityStore = defineStore('activity', () => {
     })
   }
 
-  function updateDownloadQueue(queue: Omit<DownloadQueueState, 'active'> & { active?: boolean }, title?: string) {
+  function updateDownloadQueue(queue: Omit<DownloadQueueState, 'active'> & { active?: boolean }, title?: string, requestId?: string) {
     const current = findTask('download')
     return upsertTask('download', {
+      requestId,
       kind: 'download',
       title: title || current?.title || 'Downloads',
-      detail: `Queue ${queue.current}/${queue.total} · Completed ${queue.completed} · Failed ${queue.failed}`,
-      percent: clampPercent(((queue.completed + queue.failed) / Math.max(queue.total, 1)) * 100),
+      detail: `Queue ${queue.current}/${queue.total} · Completed ${queue.completed} · Failed ${queue.failed}${queue.cancelled ? ` · Cancelled ${queue.cancelled}` : ''}`,
+      percent: clampPercent(((queue.completed + queue.failed + (queue.cancelled || 0)) / Math.max(queue.total, 1)) * 100),
       target: 'download',
       cancellable: true,
       queue: { ...queue, active: queue.active ?? true },
@@ -209,6 +169,7 @@ export const useActivityStore = defineStore('activity', () => {
     if (!current) return
     const state = input.state ?? 'completed'
     const task = upsertTask('download', {
+      requestId: undefined,
       kind: 'download',
       title: current.title,
       detail: input.detail || (state === 'completed' ? 'Download queue complete' : state === 'cancelled' ? 'Download queue cancelled' : 'Some downloads are unfinished'),
@@ -221,56 +182,9 @@ export const useActivityStore = defineStore('activity', () => {
     retainThenDismiss(task)
   }
 
-  function beginSubtitle(input: SubtitleInput) {
-    const id = `subtitle:${input.projectId}`
-    clearRetention(id)
-    return upsertTask(id, {
-      kind: 'subtitle',
-      title: input.title || 'Subtitles',
-      detail: input.detail || 'Preparing subtitles…',
-      percent: 0,
-      target: 'subtitles',
-      projectId: input.projectId,
-      cancellable: true,
-      state: 'active',
-    })
-  }
-
-  function finishSubtitle(projectId: string, input: FinishInput = {}) {
-    const id = `subtitle:${projectId}`
-    const current = findTask(id)
-    if (!current) return
-    const state = input.state ?? 'completed'
-    const task = upsertTask(id, {
-      kind: 'subtitle',
-      title: current.title,
-      detail: input.detail || (state === 'completed' ? 'Subtitles complete' : state === 'cancelled' ? 'Subtitles cancelled' : 'Subtitles unfinished'),
-      percent: state === 'completed' ? 100 : current.percent,
-      target: 'subtitles',
-      projectId,
-      cancellable: false,
-      state,
-    })
-    retainThenDismiss(task)
-  }
-
-  function updateSubtitle(projectId: string, patch: Pick<Partial<ActivityTask>, 'title' | 'detail' | 'percent'>) {
-    const id = `subtitle:${projectId}`
-    const current = findTask(id)
-    return upsertTask(id, {
-      kind: 'subtitle',
-      title: patch.title || current?.title || 'Subtitles',
-      detail: patch.detail || current?.detail || 'Processing subtitles…',
-      percent: patch.percent ?? current?.percent ?? 0,
-      target: 'subtitles',
-      projectId,
-      cancellable: true,
-      state: 'active',
-    })
-  }
-
   function handleDownloadProgress(event: DownloadProgressEvent) {
     if (event.status === 'log') return
+    if (event.requestId && findTask('download')?.requestId !== event.requestId) return
     const current = findTask('download') ?? beginDownload({ title: 'Downloads' })
     const itemPercent = clampPercent(event.percent)
     const queue = current.queue
@@ -278,7 +192,7 @@ export const useActivityStore = defineStore('activity', () => {
     const candidatePercent = unknown ? null : queue?.active
       ? itemPercent === null
         ? null
-        : clampPercent(((queue.completed + queue.failed + itemPercent / 100) / Math.max(queue.total, 1)) * 100)
+        : clampPercent(((queue.completed + queue.failed + (queue.cancelled || 0) + itemPercent / 100) / Math.max(queue.total, 1)) * 100)
       : itemPercent
     const percent = candidatePercent
     const terminal = ['finished', 'cancelled', 'error'].includes(event.status)
@@ -304,30 +218,19 @@ export const useActivityStore = defineStore('activity', () => {
     })
   }
 
-  function handleSubtitleProgress(event: SubtitleProgressEvent) {
-    const current = findTask(`subtitle:${event.projectId}`)
-    if (current && !['active', 'cancelling'].includes(current.state)) return
-    updateSubtitle(event.projectId, {
-      title: current?.title || 'Subtitles',
-      detail: subtitleStageLabel(event),
-      percent: clampPercent(event.percent),
-    })
-  }
-
-  function handleSetupProgress(event: ToolInstallEvent | WhisperDownloadEvent) {
-    const isToolEvent = 'tool' in event
+  function handleSetupProgress(event: ToolInstallEvent) {
     const state = event.status === 'error' ? 'failed' : ['installed', 'completed'].includes(event.status) ? 'completed' : 'active'
-    const task = upsertTask(setupTaskId(event), {
+    const task = upsertTask(`tool:${event.tool}`, {
       kind: 'setup',
-      title: setupTitle(event),
+      title: event.tool === 'yt-dlp' ? 'Install yt-dlp' : 'Install FFmpeg',
       detail: state === 'completed' ? 'Ready' : state === 'failed' ? 'Installation failed' : event.status === 'extracting' ? 'Installing…' : 'Downloading…',
       percent: clampPercent(event.percent),
-      target: setupTarget(event),
+      target: 'settings',
       cancellable: false,
       state,
     })
     if (state !== 'active') retainThenDismiss(task)
-    if (isToolEvent && state === 'completed') {
+    if (state === 'completed') {
       // Completed installations do not affect subsequent downloads.
       task.cancellable = false
     }
@@ -339,9 +242,7 @@ export const useActivityStore = defineStore('activity', () => {
     try {
       unlisteners = await Promise.all([
         onDownloadProgress(handleDownloadProgress),
-        onSubtitleProgress(handleSubtitleProgress),
         onToolInstallProgress(handleSetupProgress),
-        onWhisperDownloadProgress(handleSetupProgress),
       ])
     } catch {
       listening = false
@@ -374,7 +275,6 @@ export const useActivityStore = defineStore('activity', () => {
       detail: 'Cancelling…',
       percent: task.percent,
       target: task.target,
-      projectId: task.projectId,
       cancellable: false,
       queue: task.queue,
       state: 'cancelling',
@@ -383,8 +283,6 @@ export const useActivityStore = defineStore('activity', () => {
       if (task.kind === 'download') {
         if (downloadCanceller) await downloadCanceller()
         else await cancelDownload()
-      } else if (task.kind === 'subtitle' && task.projectId) {
-        await cancelSubtitleTask(task.projectId)
       }
     } catch {
       const failed = upsertTask(id, {
@@ -393,7 +291,6 @@ export const useActivityStore = defineStore('activity', () => {
         detail: 'Unable to cancel task. Try again.',
         percent: task.percent,
         target: task.target,
-        projectId: task.projectId,
         cancellable: false,
         queue: task.queue,
         state: 'failed',
@@ -412,9 +309,6 @@ export const useActivityStore = defineStore('activity', () => {
     beginDownload,
     updateDownloadQueue,
     finishDownload,
-    beginSubtitle,
-    updateSubtitle,
-    finishSubtitle,
     startListening,
     stopListening,
     registerDownloadCanceller,

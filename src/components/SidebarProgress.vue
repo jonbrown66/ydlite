@@ -26,9 +26,6 @@ function openTask() {
   if (!task.value) return
   void router.push({
     name: task.value.target,
-    query: task.value.target === 'subtitles' && task.value.projectId
-      ? { project: task.value.projectId }
-      : undefined,
   })
 }
 </script>

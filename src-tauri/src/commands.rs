@@ -8,7 +8,7 @@ use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
 use crate::download_metadata;
-use crate::downloader::{run_download, DownloadState};
+use crate::downloader::{run_download, DownloadResult, DownloadState};
 use crate::errors::AppError;
 use crate::process_utils::hidden_command;
 use crate::tool_paths;
@@ -42,6 +42,8 @@ pub struct VideoFormat {
     pub bitrate_kbps: Option<f64>,
     pub vcodec: Option<String>,
     pub acodec: Option<String>,
+    pub fps: Option<f64>,
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -78,12 +80,17 @@ pub struct VideoInfo {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadRequest {
+    pub request_id: Option<String>,
     pub url: String,
     pub dir: String,
     pub mode: DownloadMode,
     pub format_id: Option<String>,
     #[serde(default)]
     pub options: ParseOptions,
+    #[serde(default)]
+    pub file_options: crate::download_files::DownloadOptions,
+    #[serde(default)]
+    pub overwrite_confirmed: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -629,6 +636,11 @@ fn video_info_from_value(
                         .and_then(|value| value.as_f64()),
                     vcodec,
                     acodec,
+                    fps: fmt.get("fps").and_then(|v| v.as_f64()),
+                    language: fmt
+                        .get("language")
+                        .and_then(|v| v.as_str())
+                        .map(ToString::to_string),
                 });
             }
             Some(list)
@@ -661,7 +673,7 @@ pub async fn start_download(
     app: AppHandle,
     state: State<'_, DownloadState>,
     request: DownloadRequest,
-) -> Result<(), AppError> {
+) -> Result<DownloadResult, AppError> {
     validate_url(&request.url)?;
     let dir = PathBuf::from(request.dir.trim());
     if !dir.is_dir() {

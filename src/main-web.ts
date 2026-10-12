@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
-import LandingPage from './LandingPage.vue'
 import './styles/theme.css'
 import './styles/controls.css'
+import LandingPage from './LandingPage.vue'
 
 document.documentElement.lang = 'en'
 

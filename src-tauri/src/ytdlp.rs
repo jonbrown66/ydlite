@@ -7,7 +7,7 @@ const GENERIC_IMPERSONATE_ARGS: [&str; 2] = ["--extractor-args", "generic:impers
 const CONCURRENT_FRAGMENTS: &str = "8";
 const BEST_COMPATIBLE_FORMAT: &str =
     "bv*[ext=mp4]+ba[ext=m4a]/bv*[vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b";
-const P720_COMPATIBLE_FORMAT: &str = "bv*[ext=mp4][height<=720]+ba[ext=m4a]/bv*[vcodec^=avc1][height<=720]+ba[ext=m4a]/b[ext=mp4][height<=720]/bv*[height<=720]+ba/b[height<=720]/best";
+const P720_COMPATIBLE_FORMAT: &str = "bv*[ext=mp4][height<=720]+ba[ext=m4a]/bv*[vcodec^=avc1][height<=720]+ba[ext=m4a]/b[ext=mp4][height<=720]/bv*[height<=720]+ba/b[height<=720]";
 
 #[derive(Clone, Debug, Default)]
 pub struct YtdlpOptions {
@@ -44,6 +44,7 @@ pub fn site_profile(url: &str) -> SiteProfile {
 
 pub fn parse_args(url: &str, flat_playlist: bool, options: &YtdlpOptions) -> Vec<String> {
     let mut args = vec![
+        "--ignore-config".to_string(),
         "-J".to_string(),
         "--encoding".to_string(),
         "utf-8".to_string(),
@@ -80,7 +81,8 @@ pub fn download_args(
             "--no-warnings",
             "--no-quiet",
             "--windows-filenames",
-            "--restrict-filenames",
+            "--no-overwrites",
+            "--ignore-config",
             "--encoding",
             "utf-8",
             "--print",
@@ -148,7 +150,7 @@ fn mode_args(mode: &DownloadMode, custom_format: Option<&str>) -> Vec<String> {
             if let Some(fmt) = custom_format {
                 vec![
                     "-f".to_string(),
-                    format!("{fmt}[acodec!=none]/{fmt}+ba[ext=m4a]/{fmt}+bestaudio/{fmt}/best"),
+                    format!("{fmt}[acodec!=none]/{fmt}+ba[ext=m4a]/{fmt}+bestaudio/{fmt}"),
                     "--merge-output-format".to_string(),
                     "mp4".to_string(),
                 ]
@@ -164,9 +166,154 @@ fn mode_args(mode: &DownloadMode, custom_format: Option<&str>) -> Vec<String> {
     }
 }
 
+pub fn configured_download_args(
+    request: &crate::commands::DownloadRequest,
+    dir: &str,
+    output: &str,
+) -> Result<Vec<String>, crate::errors::AppError> {
+    use crate::download_files::{Conflict, Quality};
+    let files = &request.file_options;
+    if files.conflict == Conflict::Overwrite && !request.overwrite_confirmed {
+        return Err(crate::errors::AppError::user(
+            "覆盖文件前需要确认。",
+            "Overwrite confirmation required",
+        ));
+    }
+    for id in [
+        request.format_id.as_deref(),
+        files.audio_format_id.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if id.is_empty()
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        {
+            return Err(crate::errors::AppError::user(
+                "格式标识无效，请重新解析并选择格式。",
+                "Invalid format ID",
+            ));
+        }
+    }
+    if matches!(request.mode, DownloadMode::Custom) && request.format_id.is_none() {
+        return Err(crate::errors::AppError::user(
+            "请选择视频格式。",
+            "Requested format is not available",
+        ));
+    }
+    let mut args = download_args(
+        &request.mode,
+        request.format_id.as_deref(),
+        dir,
+        request.url.trim(),
+        &request.options.to_ytdlp_options(site_profile(&request.url)),
+    );
+    let output_index = args.iter().position(|arg| arg == "-o").unwrap() + 1;
+    args[output_index] = output.to_string();
+    if files.conflict == Conflict::Overwrite {
+        let index = args
+            .iter()
+            .position(|arg| arg == "--no-overwrites")
+            .unwrap();
+        args[index] = "--force-overwrites".into();
+    }
+    if matches!(files.quality, Quality::Quality) {
+        if let Some(index) = args.iter().position(|arg| arg == "--merge-output-format") {
+            args[index + 1] = "mkv".into();
+        }
+    }
+    let mut selector = match request.mode {
+        DownloadMode::Best if matches!(files.quality, Quality::Quality) => {
+            Some("bv*+ba/b".to_string())
+        }
+        DownloadMode::P720 if matches!(files.quality, Quality::Quality) => {
+            Some("bv*[height<=720]+ba/b[height<=720]".to_string())
+        }
+        _ => None,
+    };
+    if let Some(audio) = files.audio_format_id.as_deref() {
+        selector = Some(match request.mode {
+            DownloadMode::Mp3 => audio.to_string(),
+            DownloadMode::Custom => format!(
+                "{}[acodec=none]+{audio}",
+                request.format_id.as_deref().unwrap()
+            ),
+            DownloadMode::P720 => {
+                if matches!(files.quality, Quality::Compatible) {
+                    format!("bv[ext=mp4][height<=720]+{audio}/bv[height<=720]+{audio}")
+                } else {
+                    format!("bv[height<=720]+{audio}")
+                }
+            }
+            DownloadMode::Best => {
+                if matches!(files.quality, Quality::Compatible) {
+                    format!("bv[ext=mp4]+{audio}/bv+{audio}")
+                } else {
+                    format!("bv+{audio}")
+                }
+            }
+        });
+    }
+    if matches!(request.mode, DownloadMode::Mp3) && selector.is_none() {
+        selector = Some("bestaudio/best".into());
+    }
+    if let Some(selector) = selector {
+        if let Some(index) = args.iter().position(|arg| arg == "-f") {
+            args[index + 1] = selector;
+        } else {
+            args.splice(0..0, ["-f".into(), selector]);
+        }
+    }
+    // Read the actual post-merge/conversion path, including skipped existing files.
+    args.splice(
+        0..0,
+        [
+            "--print".into(),
+            "after_move:__YDLITE_FILE__%(filepath)s".into(),
+        ],
+    );
+    Ok(args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_formats_and_tracks_never_fall_back_silently() {
+        let mut request: crate::commands::DownloadRequest = serde_json::from_value(serde_json::json!({"url":"https://example.com/media","dir":"C:/out","mode":"custom","formatId":"137","fileOptions":{"audioFormatId":"140"}})).unwrap();
+        let args = configured_download_args(&request, "C:/out", "中文.%(ext)s").unwrap();
+        let selector = &args[args.iter().position(|a| a == "-f").unwrap() + 1];
+        assert_eq!(selector, "137[acodec=none]+140");
+        request.file_options.conflict = crate::download_files::Conflict::Overwrite;
+        assert!(configured_download_args(&request, "C:/out", "file.%(ext)s").is_err());
+        request.overwrite_confirmed = true;
+        assert!(configured_download_args(&request, "C:/out", "file.%(ext)s")
+            .unwrap()
+            .contains(&"--force-overwrites".into()));
+        request.format_id = Some("137/best".into());
+        assert!(configured_download_args(&request, "C:/out", "file.%(ext)s").is_err());
+    }
+
+    #[test]
+    fn p720_never_falls_back_to_an_unbounded_video() {
+        let args = download_args(
+            &DownloadMode::P720,
+            None,
+            "D:\\Downloads",
+            "https://example.com/video",
+            &YtdlpOptions::default(),
+        );
+        let selector = &args[args.iter().position(|arg| arg == "-f").unwrap() + 1];
+        assert!(
+            selector
+                .split('/')
+                .all(|choice| choice.contains("[height<=720]")),
+            "every alternative must preserve the requested resolution limit"
+        );
+    }
 
     #[test]
     fn site_profile_matches_hosts_only() {
@@ -229,7 +376,8 @@ mod tests {
                 && pair[1].starts_with(&format!("before_dl:{PROGRESS_PLAN_PREFIX}"))
         }));
         assert!(args.iter().any(|arg| arg == "--windows-filenames"));
-        assert!(args.iter().any(|arg| arg == "--restrict-filenames"));
+        assert!(args.iter().any(|arg| arg == "--windows-filenames"));
+        assert!(args.iter().any(|arg| arg == "--no-overwrites"));
         assert!(args.windows(2).any(|pair| pair == ["-P", "D:\\Downloads"]));
         assert!(args
             .windows(2)
@@ -273,11 +421,8 @@ mod tests {
             &YtdlpOptions::default(),
         );
 
-        assert!(args.windows(2).any(|pair| {
-            pair == [
-                "-f",
-                "137[acodec!=none]/137+ba[ext=m4a]/137+bestaudio/137/best",
-            ]
-        }));
+        assert!(args
+            .windows(2)
+            .any(|pair| { pair == ["-f", "137[acodec!=none]/137+ba[ext=m4a]/137+bestaudio/137"] }));
     }
 }

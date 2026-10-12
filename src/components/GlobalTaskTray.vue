@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import downloadIcon from 'iconoir/icons/download.svg?url'
-import mediaVideoIcon from 'iconoir/icons/media-video.svg?url'
 import settingsIcon from 'iconoir/icons/settings.svg?url'
 import xmarkIcon from 'iconoir/icons/xmark.svg?url'
 import { useActivityStore, type ActivityTask } from '@/stores/activity'
@@ -15,26 +14,23 @@ function iconStyle(url: string) {
 
 function kindIcon(task: ActivityTask) {
   if (task.kind === 'download') return downloadIcon
-  if (task.kind === 'setup') return settingsIcon
-  return mediaVideoIcon
+  return settingsIcon
 }
 
 function kindLabel(task: ActivityTask) {
   if (task.kind === 'download') return 'Download'
-  if (task.kind === 'setup') return 'Setup'
-  return 'Subtitles'
+  return 'Setup'
 }
 
 function queueLabel(task: ActivityTask) {
   const queue = task.queue
   if (!queue || queue.total <= 1) return ''
-  return `${queue.current}/${queue.total} · Completed ${queue.completed}${queue.failed ? ` · Failed ${queue.failed}` : ''}`
+  return `${queue.current}/${queue.total} · Completed ${queue.completed}${queue.failed ? ` · Failed ${queue.failed}` : ''}${queue.cancelled ? ` · Cancelled ${queue.cancelled}` : ''}`
 }
 
 function openTask(task: ActivityTask) {
   void router.push({
     name: task.target,
-    query: task.target === 'subtitles' && task.projectId ? { project: task.projectId } : undefined,
   })
 }
 </script>

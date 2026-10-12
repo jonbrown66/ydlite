@@ -1,0 +1,18 @@
+{
+  "widths": [
+    720,
+    800,
+    900,
+    1180
+  ],
+  "keyboardTabs": true,
+  "sameResolutionFormats": true,
+  "audioLanguage": true,
+  "overwriteConfirmation": true,
+  "batchDeduplication": true,
+  "cancelAndPause": true,
+  "reloadRecovery": true,
+  "preferencesPersistence": true,
+  "ipc": "mocked Tauri IPC",
+  "nativeWebView2": false
+}

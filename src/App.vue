@@ -5,16 +5,17 @@ import brandMark from '@/assets/brand-mark.svg'
 import clockIcon from 'iconoir/icons/clock.svg?url'
 import downloadIcon from 'iconoir/icons/download.svg?url'
 import settingsIcon from 'iconoir/icons/settings.svg?url'
-import translateIcon from 'iconoir/icons/translate.svg?url'
 import navArrowLeftIcon from 'iconoir/icons/nav-arrow-left.svg?url'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import { canCloseWindow } from '@/lib/closeGuards'
 import { Button } from '@/components/ui/button'
 import SidebarProgress from '@/components/SidebarProgress.vue'
 import { useActivityStore } from '@/stores/activity'
+import { useDownloadQueueStore } from '@/stores/downloadQueue'
 
 const appWindow = getCurrentWindow()
 const activity = useActivityStore()
+const downloadQueue = useDownloadQueueStore()
 const maximized = ref(false)
 const sidebarCollapsed = ref(localStorage.getItem('ydlite.sidebarCollapsed') === '1')
 const showCloseConfirm = ref(false)
@@ -38,7 +39,7 @@ async function checkClose() {
   closePending = (async () => {
     try {
       if (!await canCloseWindow()) return false
-      if (!activity.visibleTasks.some(task => ['active', 'cancelling'].includes(task.state))) return true
+      if (!downloadQueue.running && !activity.visibleTasks.some(task => ['active', 'cancelling'].includes(task.state))) return true
       showCloseConfirm.value = true
       return await new Promise<boolean>(resolve => { resolveClose = resolve })
     } catch {
@@ -58,7 +59,6 @@ let unlistenResize: (() => void) | undefined
 
 const navItems = [
   { name: 'download', label: 'Downloads', icon: downloadIcon },
-  { name: 'subtitles', label: 'Subtitles', icon: translateIcon },
   { name: 'tasks', label: 'History', icon: clockIcon },
 ] as const
 
@@ -85,6 +85,7 @@ onMounted(async () => {
   document.addEventListener('pointerdown', usePointerMotion, true)
   document.addEventListener('keydown', useKeyboardMotion, true)
   void activity.startListening()
+  void downloadQueue.initialize().catch(() => { closeError.value = 'Unable to listen for download progress. Try again before starting a download.' })
   unlistenClose = await appWindow.onCloseRequested(async event => {
     if (closePending) { event.preventDefault(); return }
     if (!await checkClose()) event.preventDefault()
@@ -103,6 +104,7 @@ onBeforeUnmount(() => {
   unlistenClose?.()
   settleClose(false)
   activity.stopListening()
+  downloadQueue.dispose()
 })
 </script>
 
@@ -168,7 +170,7 @@ onBeforeUnmount(() => {
     </div>
     <p v-if="closeError" class="window-error" role="alert">{{ closeError }}</p>
     <AppDialog :open="showCloseConfirm" title="Tasks are still running" @close="settleClose(false)">
-      <p>Closing the app will interrupt unfinished tasks.</p>
+      <p>Closing will interrupt the current task. The download queue is saved; you can continue it after reopening the app.</p>
       <div class="modal-actions">
         <Button variant="outline" @click="settleClose(false)">Keep working</Button>
         <Button variant="danger" @click="settleClose(true)">Close anyway</Button>

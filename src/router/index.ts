@@ -15,12 +15,6 @@ const router = createRouter({
       meta: { title: '视频下载', eyebrow: 'DOWNLOAD' },
     },
     {
-      path: '/subtitles',
-      name: 'subtitles',
-      component: () => import('@/pages/SubtitlePage.vue'),
-      meta: { title: '自动字幕', eyebrow: 'SUBTITLES' },
-    },
-    {
       path: '/tasks',
       name: 'tasks',
       component: () => import('@/pages/TasksPage.vue'),

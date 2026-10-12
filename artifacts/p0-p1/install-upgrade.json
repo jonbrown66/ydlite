@@ -1,0 +1,7 @@
+{
+  "ExitCode": 0,
+  "InstalledVersion": "0.2.0",
+  "OutputFilePreserved": true,
+  "InstallDirectory": "E:\\demo2\\ydlite\\tmp-test\\installer-qa\\app",
+  "Note": "Installer upgrade only; native UI and original user settings were not exercised."
+}

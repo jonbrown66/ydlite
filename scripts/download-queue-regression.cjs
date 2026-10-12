@@ -5,43 +5,25 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const vue = require('vue');
 
+const { setupQueue } = require('./queue-test-harness.cjs');
 function setup() {
-  const calls = [], finishes = [], history = [];
-  const api = {
-    startDownload(request) {
-      return new Promise((resolve, reject) => calls.push({ request, resolve, reject }));
-    },
-    cancelDownload: async () => {},
-  };
-  const activity = new Proxy({}, { get: (_, name) => name === 'finishDownload'
-    ? value => finishes.push(value) : () => {} });
-  const source = fs.readFileSync('src/pages/DownloadPage.vue', 'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
-  const code = ts.transpileModule(source + `
+  const env = setupQueue();
+  const h = env.page(`
     globalThis.test = { video, saveDir, selectedEntries, queueActive, downloading, cancelling,
-      queueCompleted, queueFailed, canDownload, handleBatchDownload, handleProgress, cancelQueue,
-      handleDownload, progress, progressPercent, progressIndeterminate, progressTrackPercent, downloadSizeText, remainingTimeText, selectedFormatId,
+      queueCompleted: computed(() => downloadQueue.jobs.filter(job => job.status === 'completed').length), queueFailed: computed(() => downloadQueue.failed.length), canDownload, handleBatchDownload, handleProgress, cancelQueue,
+      handleDownload, failedEntries, formatOptions, selectedFormat, progress, progressPercent, progressIndeterminate, progressTrackPercent, downloadSizeText, remainingTimeText, selectedFormatId,
       logs, hasLogs, logsOpen, handleLogsToggle, flushLogs, resetLogs };
-  `, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const context = {
-    exports: {}, console,
-    window: { requestAnimationFrame: () => 1, cancelAnimationFrame() {}, setTimeout, clearTimeout },
-    localStorage: { setItem() {} },
-    require(name) {
-      if (name === 'vue') return { ...vue, onMounted() {}, onBeforeUnmount() {} };
-      if (name === 'vue-router') return { useRouter: () => ({}) };
-      if (name.includes('api/tauri')) return api;
-      if (name === '@/stores/tasks') return { useTasksStore: () => ({ downloads: [], addDownload: item => history.push(item) }) };
-      if (name === '@/stores/activity') return { useActivityStore: () => activity };
-      return {};
-    },
-  };
-  vm.runInNewContext(code, context);
-  const h = context.test;
+  `);
+  const handleProgress = h.handleProgress;
+  h.handleProgress = event => { env.emit(event); handleProgress(event); };
   h.video.value = { title: 'Playlist', isPlaylist: true, entries: [1, 2, 3].map(n => ({ title: `Video ${n}`, url: `https://example.com/${n}` })) };
   h.saveDir.value = 'C:/test';
   h.selectedEntries.value = Object.fromEntries(h.video.value.entries.map(e => [e.url, true]));
-  return { h, calls, finishes, history };
+  const history = new Proxy([], {get:(_,key)=>env.history.downloads[key]});
+  h.queue = env.queue;
+  return {h,calls:env.calls,finishes:env.finishes,history};
 }
+
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 (async () => {
@@ -73,7 +55,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   {
     const { h, calls } = setup();
     h.video.value = {title:'Video',isPlaylist:false,resolvedUrl:'https://example.com/video'};
-    const run = h.handleDownload();
+    const run = h.handleDownload(); await tick();
     calls[0].reject(new Error('Controlled startup failure'));
     await run;
     assert.equal(h.progress.value.status,'error','IPC failure must not leave Preparing visible');
@@ -110,7 +92,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   }
   {
     const { h, calls, finishes, history } = setup();
-    const run = h.handleBatchDownload();
+    const run = h.handleBatchDownload(); await tick();
     assert.equal(calls.length, 1);
     h.handleProgress({ status: 'error' });
     await tick();
@@ -129,13 +111,14 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     await run;
     assert.equal(h.queueCompleted.value, 1);
     assert.equal(h.queueFailed.value, 2);
+    assert.equal(h.queue.progress.status, 'error', 'a queued IPC failure without an event must not leave Preparing visible');
     assert.equal(finishes[0].state, 'failed');
     assert.equal(history[0].title, 'Video 2');
     assert.equal(h.queueActive.value, false);
   }
   {
     const { h, calls, finishes } = setup();
-    const run = h.handleBatchDownload();
+    const run = h.handleBatchDownload(); await tick();
     h.cancelQueue();
     h.handleProgress({ status: 'cancelled' });
     await tick();
@@ -150,6 +133,37 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     assert.equal(finishes[0].state, 'cancelled');
     assert.equal(h.cancelling.value, false);
     assert.equal(h.canDownload.value, true);
+  }
+  {
+    const { h, calls } = setup();
+    const first = h.handleBatchDownload(); await tick();
+    calls[0].reject(new Error('Controlled failure'));
+    await tick(); calls[1].resolve();
+    await tick(); calls[2].resolve(); await first;
+    const retry = h.handleBatchDownload(true); await tick();
+    assert.equal(calls.length, 4);
+    assert.equal(calls[3].request.url, 'https://example.com/1');
+    calls[3].resolve(); await retry;
+    assert.equal(calls.length, 4, 'successful entries must not be repeated');
+    assert.equal(h.failedEntries.value.length, 0);
+    assert.equal(h.queueCompleted.value, 3, 'durable queue keeps successful tasks from the first run');
+  }
+  {
+    const { h, calls, finishes } = setup();
+    const run = h.handleBatchDownload(); await tick(); h.cancelQueue();
+    calls[0].reject(new Error('Cancelled process')); await run;
+    assert.equal(h.queueFailed.value, 0, 'cancelled items are not failed downloads');
+    assert.equal(h.failedEntries.value.length, 0);
+    assert.equal(finishes[0].state, 'cancelled');
+  }
+  for (const [selection, expected] of [['best','best'],['p720','p720'],['bestaudio','mp3'],['137','custom']]) {
+    const { h, calls } = setup();
+    h.video.value = {title:'Video',resolvedUrl:'https://example.com/video'};
+    h.selectedFormatId.value = selection;
+    const run = h.handleDownload(); await tick();
+    assert.equal(calls[0].request.mode, expected);
+    assert.equal(calls[0].request.formatId, expected === 'custom' ? '137' : null);
+    calls[0].resolve(); await run;
   }
   console.log('Download queue regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

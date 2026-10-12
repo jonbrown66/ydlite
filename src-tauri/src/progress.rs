@@ -402,6 +402,9 @@ pub fn parse_progress_line(line: &str) -> Option<DownloadProgressEvent> {
 }
 
 pub fn parse_output_path(line: &str) -> Option<String> {
+    if let Some(path) = line.strip_prefix("__YDLITE_FILE__") {
+        return Some(path.trim().to_string());
+    }
     let prefixes = [
         "[download] Destination: ",
         "[Merger] Merging formats into ",

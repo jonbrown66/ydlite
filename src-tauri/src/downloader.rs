@@ -116,10 +116,17 @@ pub async fn run_download(
     state: DownloadState,
     request: DownloadRequest,
     dir: PathBuf,
-) -> Result<(), AppError> {
+) -> Result<DownloadResult, AppError> {
     let metadata = download_metadata::take(request.url.trim(), &request.options);
+    let request_id = request.request_id.clone();
     let emit: ProgressEmitter = Arc::new(move |event| {
-        let _ = app.emit("download://progress", event);
+        let _ = app.emit(
+            "download://progress",
+            RequestProgress {
+                request_id: request_id.clone(),
+                event,
+            },
+        );
     });
     run_download_inner(
         state,
@@ -135,6 +142,22 @@ pub async fn run_download(
 
 type ProgressEmitter = Arc<dyn Fn(DownloadProgressEvent) + Send + Sync>;
 
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadResult {
+    pub cancelled: bool,
+    pub file_path: Option<String>,
+    pub skipped: bool,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RequestProgress {
+    request_id: Option<String>,
+    #[serde(flatten)]
+    event: DownloadProgressEvent,
+}
+
 async fn run_download_inner(
     state: DownloadState,
     request: DownloadRequest,
@@ -143,20 +166,110 @@ async fn run_download_inner(
     program: PathBuf,
     ffmpeg: PathBuf,
     emit: ProgressEmitter,
-) -> Result<(), AppError> {
+) -> Result<DownloadResult, AppError> {
     state.reserve().await?;
+    emit(DownloadProgressEvent::status("starting", None));
+    if metadata.is_none() {
+        let mut command = hidden_command(&program);
+        command
+            .kill_on_drop(true)
+            .env("PYTHONIOENCODING", "utf-8")
+            .env("PYTHONUTF8", "1")
+            .args(ytdlp::parse_args(
+                request.url.trim(),
+                false,
+                &request
+                    .options
+                    .to_ytdlp_options(ytdlp::site_profile(&request.url)),
+            ))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let preparation = async {
+            let child = command.spawn()?;
+            if let Some(id) = child.id() {
+                state.set_child_id(id).await;
+            }
+            if state.inner.lock().await.cancel_requested {
+                state.cancel_current().await?;
+            }
+            let output = tokio::time::timeout(Duration::from_secs(30), child.wait_with_output())
+                .await
+                .map_err(|_| AppError::user("解析超时，请检查网络后重试。", "Parse timed out"))??;
+            if !output.status.success() {
+                return Err(AppError::user(
+                    "视频解析失败。",
+                    String::from_utf8_lossy(&output.stderr).to_string(),
+                ));
+            }
+            Ok::<_, AppError>(output.stdout)
+        }
+        .await;
+        state.inner.lock().await.child_id = None;
+        match preparation {
+            Ok(json) => metadata = Some(json),
+            Err(error) => {
+                let cancelled = state.finish(None).await;
+                if cancelled {
+                    emit(DownloadProgressEvent::status("cancelled", None));
+                    return Ok(DownloadResult {
+                        cancelled: true,
+                        file_path: None,
+                        skipped: false,
+                    });
+                }
+                return Err(error);
+            }
+        }
+    }
+    let preparation = (|| {
+        let info: serde_json::Value = serde_json::from_slice(metadata.as_deref().unwrap())?;
+        let profile = format!(
+            "{:?}:{}:{:?}:{}",
+            request.mode,
+            request.format_id.as_deref().unwrap_or(""),
+            request.file_options.quality,
+            request
+                .file_options
+                .audio_format_id
+                .as_deref()
+                .unwrap_or("")
+        );
+        let plan =
+            crate::download_files::plan_output(&dir, &info, &profile, &request.file_options)?;
+        let args =
+            ytdlp::configured_download_args(&request, &dir.to_string_lossy(), &plan.template)?;
+        Ok::<_, AppError>((plan, args))
+    })();
+    let (plan, base_args) = match preparation {
+        Ok(value) => value,
+        Err(error) => {
+            state.clear().await;
+            return Err(error);
+        }
+    };
+    if let Some(existing) = plan.existing {
+        let cancelled = state.finish(None).await;
+        let file_path = if cancelled {
+            None
+        } else {
+            Some(existing.to_string_lossy().into_owned())
+        };
+        emit(DownloadProgressEvent {
+            file_path: file_path.clone(),
+            message: Some("Already downloaded; existing file retained.".into()),
+            ..DownloadProgressEvent::status(if cancelled { "cancelled" } else { "finished" }, None)
+        });
+        return Ok(DownloadResult {
+            cancelled,
+            file_path,
+            skipped: !cancelled,
+        });
+    }
     loop {
         let input_metadata = metadata.take();
         let using_metadata = input_metadata.is_some();
-        let mut args = ytdlp::download_args(
-            &request.mode,
-            request.format_id.as_deref(),
-            &dir.to_string_lossy(),
-            request.url.trim(),
-            &request
-                .options
-                .to_ytdlp_options(ytdlp::site_profile(request.url.trim())),
-        );
+        let mut args = base_args.clone();
         if using_metadata {
             args.pop(); // The metadata is the only input; passing the URL would download it twice.
             args.extend(["--load-info-json".into(), "-".into()]);
@@ -209,7 +322,6 @@ async fn run_download_inner(
                 return Err(error);
             }
         }
-        emit(DownloadProgressEvent::status("starting", None));
 
         let log_lines = Arc::new(Mutex::new(VecDeque::<String>::new()));
         let output_path = Arc::new(Mutex::new(None::<String>));
@@ -305,8 +417,21 @@ async fn run_download_inner(
 
         if was_cancelled {
             emit(DownloadProgressEvent::status("cancelled", None));
-            return Ok(());
+            return Ok(DownloadResult {
+                cancelled: true,
+                file_path: None,
+                skipped: false,
+            });
         } else if status.success() {
+            if !final_file_path
+                .as_ref()
+                .is_some_and(|path| PathBuf::from(path).is_file())
+            {
+                return Err(AppError::user(
+                    "下载器未返回可用的输出文件，请重新解析后重试。",
+                    "No completed output file found",
+                ));
+            }
             emit(DownloadProgressEvent {
                 status: "finished".to_string(),
                 percent: Some(100.0),
@@ -319,12 +444,16 @@ async fn run_download_inner(
                 eta: Some("00:00".to_string()),
                 line: None,
                 message: Some("下载完成。".to_string()),
-                file_path: final_file_path,
+                file_path: final_file_path.clone(),
                 metrics: final_progress
                     .as_ref()
                     .and_then(|event| event.metrics.clone()),
             });
-            return Ok(());
+            return Ok(DownloadResult {
+                cancelled: false,
+                file_path: final_file_path,
+                skipped: false,
+            });
         } else {
             let current_state = DownloadProgressEvent {
                 status: "error".to_string(),
@@ -446,6 +575,258 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires separate video/en/zh fixtures served at YDLITE_TEST_MEDIA_URL's origin"]
+    async fn real_audio_track_selection_and_quality_container() {
+        let source = std::env::var("YDLITE_TEST_MEDIA_URL").unwrap();
+        let base = source.rsplit_once('/').unwrap().0;
+        let dir = std::env::temp_dir().join(format!("ydlite-audio-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let info = crate::commands::parse_video(crate::commands::ParseVideoRequest {
+            url: source.clone(),
+            options: Default::default(),
+        })
+        .await
+        .unwrap();
+        let raw = download_metadata::take(&info.resolved_url, &Default::default()).unwrap();
+        let mut metadata: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        for key in [
+            "url",
+            "requested_downloads",
+            "requested_formats",
+            "format_id",
+        ] {
+            metadata.as_object_mut().unwrap().remove(key);
+        }
+        metadata["formats"] = serde_json::json!([
+            {"format_id":"video","url":format!("{base}/video.mp4"),"ext":"mp4","protocol":"http","vcodec":"h264","acodec":"none","height":180,"fps":24},
+            {"format_id":"en","url":format!("{base}/en.m4a"),"ext":"m4a","protocol":"http","vcodec":"none","acodec":"aac","language":"en"},
+            {"format_id":"zh","url":format!("{base}/zh.m4a"),"ext":"m4a","protocol":"http","vcodec":"none","acodec":"aac","language":"zh"}
+        ]);
+        for (quality, extension) in [
+            (crate::download_files::Quality::Compatible, "mp4"),
+            (crate::download_files::Quality::Quality, "mkv"),
+        ] {
+            let mut request: DownloadRequest = serde_json::from_value(serde_json::json!({"url":source,"dir":dir,"mode":"custom","formatId":"video","fileOptions":{"audioFormatId":"zh"}})).unwrap();
+            request.file_options.quality = quality;
+            let result = run_download_inner(
+                DownloadState::default(),
+                request,
+                dir.clone(),
+                Some(serde_json::to_vec(&metadata).unwrap()),
+                tool_paths::ytdlp(),
+                tool_paths::ffmpeg(),
+                Arc::new(|_| {}),
+            )
+            .await
+            .unwrap();
+            let path = result.file_path.unwrap();
+            assert_eq!(PathBuf::from(&path).extension().unwrap(), extension);
+            let decoded = hidden_command(tool_paths::ffmpeg())
+                .args([
+                    "-v", "error", "-i", &path, "-map", "0:a:0", "-t", "1", "-f", "s16le", "-ac",
+                    "1", "-ar", "8000", "-",
+                ])
+                .output()
+                .await
+                .unwrap();
+            assert!(decoded.status.success());
+            let samples: Vec<i16> = decoded
+                .stdout
+                .chunks_exact(2)
+                .map(|s| i16::from_le_bytes([s[0], s[1]]))
+                .collect();
+            let crossings = samples
+                .windows(2)
+                .filter(|s| (s[0] < 0) != (s[1] < 0))
+                .count();
+            let frequency = crossings as f64 / 2.0 / (samples.len() as f64 / 8000.0);
+            assert!(
+                (820.0..940.0).contains(&frequency),
+                "selected zh track must contain the 880 Hz tone, not the 440 Hz automatic track"
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "network download; set YDLITE_TEST_PUBLIC_URL to an authorized public video"]
+    async fn real_public_download_and_playback() {
+        let url = std::env::var("YDLITE_TEST_PUBLIC_URL").expect("specify the public source");
+        let dir = std::env::temp_dir().join(format!("ydlite-public-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        for mode in [
+            crate::commands::DownloadMode::Best,
+            crate::commands::DownloadMode::P720,
+            crate::commands::DownloadMode::Mp3,
+        ] {
+            let info = crate::commands::parse_video(crate::commands::ParseVideoRequest {
+                url: url.clone(),
+                options: Default::default(),
+            })
+            .await
+            .unwrap();
+            let metadata = download_metadata::take(&info.resolved_url, &Default::default());
+            let request = DownloadRequest {
+                request_id: Some(uuid::Uuid::new_v4().to_string()),
+                url: info.resolved_url,
+                dir: dir.to_string_lossy().into_owned(),
+                mode: mode.clone(),
+                format_id: None,
+                options: Default::default(),
+                file_options: Default::default(),
+                overwrite_confirmed: false,
+            };
+            let result = run_download_inner(
+                DownloadState::default(),
+                request,
+                dir.clone(),
+                metadata,
+                tool_paths::ytdlp(),
+                tool_paths::ffmpeg(),
+                Arc::new(|_| {}),
+            )
+            .await
+            .unwrap();
+            let path = result.file_path.unwrap();
+            let probe = hidden_command(tool_paths::ffprobe())
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "stream=codec_name,height",
+                    "-of",
+                    "json",
+                ])
+                .arg(&path)
+                .output()
+                .await
+                .unwrap();
+            assert!(probe.status.success(), "output must be playable");
+            let streams: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+            let streams = streams["streams"].as_array().unwrap();
+            assert!(!streams.is_empty());
+            if matches!(mode, crate::commands::DownloadMode::P720) {
+                assert!(streams
+                    .iter()
+                    .any(|s| s["height"].as_u64().is_some_and(|h| h <= 720)));
+            }
+            if matches!(mode, crate::commands::DownloadMode::Mp3) {
+                assert!(streams.iter().any(|s| s["codec_name"] == "mp3"));
+            }
+            println!(
+                "Public source {:?}: playable, {} bytes",
+                mode,
+                std::fs::metadata(&path).unwrap().len()
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires yt-dlp, FFmpeg and YDLITE_TEST_MEDIA_URL pointing to a playable fixture"]
+    async fn real_file_policies_and_mp3_conversion() {
+        let url = std::env::var("YDLITE_TEST_MEDIA_URL").expect("set the fixture URL");
+        let dir = std::env::temp_dir().join(format!("ydlite-policy-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let run = async {
+            let info = crate::commands::parse_video(crate::commands::ParseVideoRequest {
+                url: url.clone(),
+                options: Default::default(),
+            })
+            .await
+            .unwrap();
+            let raw = download_metadata::take(&info.resolved_url, &Default::default()).unwrap();
+            let mut json: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+            json["title"] = "中文标题 同名验证".into();
+            json["uploader"] = "测试作者".into();
+            let raw = serde_json::to_vec(&json).unwrap();
+            let mut request: DownloadRequest =
+                serde_json::from_value(serde_json::json!({"url":url,"dir":dir,"mode":"best"}))
+                    .unwrap();
+            let execute = |request: DownloadRequest| {
+                run_download_inner(
+                    DownloadState::default(),
+                    request,
+                    dir.clone(),
+                    Some(raw.clone()),
+                    tool_paths::ytdlp(),
+                    tool_paths::ffmpeg(),
+                    Arc::new(|_| {}),
+                )
+            };
+            let first = execute(request.clone()).await.unwrap();
+            let path = PathBuf::from(first.file_path.unwrap());
+            assert!(path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("中文标题"));
+            let bytes = std::fs::read(&path).unwrap();
+            assert!(!bytes.is_empty());
+            let skipped = execute(request.clone()).await.unwrap();
+            assert!(skipped.skipped);
+            assert_eq!(skipped.file_path, Some(path.to_string_lossy().into_owned()));
+            request.file_options.conflict = crate::download_files::Conflict::Number;
+            let copy = execute(request.clone()).await.unwrap();
+            assert!(copy.file_path.unwrap().contains(" (2)."));
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+            request.file_options.conflict = crate::download_files::Conflict::Overwrite;
+            assert!(
+                execute(request.clone()).await.is_err(),
+                "backend also requires confirmation"
+            );
+            request.overwrite_confirmed = true;
+            std::fs::write(&path, b"replacement fixture").unwrap();
+            execute(request.clone()).await.unwrap();
+            assert!(
+                std::fs::read(&path).unwrap() == bytes,
+                "explicit replacement restored real media"
+            );
+            request.file_options.conflict = crate::download_files::Conflict::Skip;
+            request.mode = crate::commands::DownloadMode::Mp3;
+            let mp3 = execute(request.clone()).await.unwrap();
+            let mp3 = PathBuf::from(mp3.file_path.unwrap());
+            assert_eq!(mp3.extension().unwrap(), "mp3");
+            let probe = hidden_command(tool_paths::ffprobe())
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "stream=codec_name",
+                    "-of",
+                    "csv=p=0",
+                ])
+                .arg(&mp3)
+                .output()
+                .await
+                .unwrap();
+            assert!(probe.status.success());
+            assert!(String::from_utf8_lossy(&probe.stdout).contains("mp3"));
+            request.mode = crate::commands::DownloadMode::Custom;
+            request.format_id = Some("does-not-exist".into());
+            assert!(
+                execute(request).await.is_err(),
+                "invalid explicit format must fail rather than download best"
+            );
+        }
+        .await;
+        std::fs::remove_dir_all(dir).unwrap();
+        run
+    }
+
+    #[test]
+    fn progress_payload_identifies_the_download_attempt() {
+        let payload = serde_json::to_value(RequestProgress {
+            request_id: Some("attempt-2".into()),
+            event: DownloadProgressEvent::status("starting", None),
+        })
+        .unwrap();
+        assert_eq!(payload["requestId"], "attempt-2");
+        assert_eq!(payload["status"], "starting");
+        assert!(payload.get("event").is_none());
+    }
+
+    #[tokio::test]
     async fn cancellation_before_spawn_keeps_slot_reserved() {
         let state = DownloadState::default();
         state.reserve().await.unwrap();
@@ -502,6 +883,10 @@ mod tests {
         let server_media = media.clone();
         let page_hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let server_page_hits = page_hits.clone();
+        let expired_hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let server_expired_hits = expired_hits.clone();
+        let media_hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let server_media_hits = media_hits.clone();
         let server = std::thread::spawn(move || {
             while !server_stop.load(Ordering::Relaxed) {
                 let Ok((mut stream, _)) = listener.accept() else {
@@ -510,6 +895,8 @@ mod tests {
                 };
                 let body = server_media.clone();
                 let page_hits = server_page_hits.clone();
+                let expired_hits = server_expired_hits.clone();
+                let media_hits = server_media_hits.clone();
                 std::thread::spawn(move || {
                     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
                     let mut request = [0u8; 4096];
@@ -522,9 +909,15 @@ mod tests {
                         let header = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", html.len());
                         let _ = stream.write_all(header.as_bytes());
                         let _ = stream.write_all(html);
-                    } else if request.starts_with("GET /expired") {
+                    } else if request.starts_with("GET /expired")
+                        || request.starts_with("HEAD /expired")
+                    {
+                        expired_hits.fetch_add(1, Ordering::Relaxed);
                         let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
                     } else {
+                        if request.starts_with("GET /media.mp4 ") {
+                            media_hits.fetch_add(1, Ordering::Relaxed);
+                        }
                         let header = format!("HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
                         if stream.write_all(header.as_bytes()).is_err() {
                             return;
@@ -556,21 +949,33 @@ mod tests {
                     let parsed = download_metadata::take(&info.resolved_url, &Default::default());
                     assert!(parsed.is_some(), "the actual parse -> cache -> download pipeline must hit, including PATH tools");
                     parsed
-                } else { Some(serde_json::to_vec(&serde_json::json!({
-                    "id":"fixture", "title":"fixture", "extractor":"generic", "extractor_key":"Generic",
-                    "webpage_url":url, "formats":[{"format_id":"http", "url":cached_url,
-                    "ext":"mp4", "vcodec":"unknown", "acodec":"unknown", "filesize":media.len()}]
-                })).unwrap()) };
+                } else {
+                    let info = crate::commands::parse_video(crate::commands::ParseVideoRequest {
+                        url: url.clone(), options: Default::default(),
+                    }).await.unwrap();
+                    let raw = download_metadata::take(&info.resolved_url, &Default::default()).expect("real media parsing must cache complete metadata");
+                    let mut metadata: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+                    if name == "expired" {
+                        if metadata.get("url").is_some() { metadata["url"] = cached_url.clone().into(); }
+                        if let Some(formats) = metadata["formats"].as_array_mut() {
+                            for format in formats { format["url"] = cached_url.clone().into(); }
+                        }
+                    }
+                    Some(serde_json::to_vec(&metadata).unwrap())
+                };
                 let page_hits_before = page_hits.load(Ordering::Relaxed);
+                let expired_hits_before = expired_hits.load(Ordering::Relaxed);
+                let media_hits_before = media_hits.load(Ordering::Relaxed);
                 let first_bytes = Arc::new(StdMutex::new(None::<Duration>));
                 let first_bytes_recorded = first_bytes.clone();
                 let clicked_at = Instant::now();
                 let events = Arc::new(StdMutex::new(Vec::new()));
                 let recorded = events.clone();
                 let state = DownloadState::default();
-                run_download_inner(state.clone(), DownloadRequest {
+                let outcome = run_download_inner(state.clone(), DownloadRequest {
+                    request_id: Some("test-reuse".into()),
                     url, dir: dir.to_string_lossy().into(), mode: crate::commands::DownloadMode::Best,
-                    format_id: None, options: Default::default(),
+                    format_id: None, options: Default::default(), file_options: Default::default(), overwrite_confirmed: false,
                 }, dir, metadata, program.clone(), PathBuf::new(), Arc::new(move |event| {
                     if event.metrics.as_ref().and_then(|metrics| metrics.downloaded_bytes).unwrap_or(0) > 0 {
                         first_bytes_recorded.lock().unwrap().get_or_insert_with(|| clicked_at.elapsed());
@@ -585,9 +990,13 @@ mod tests {
                 assert_eq!(events.iter().filter(|e| e.status == "finished").count(), 1, "{name}: one completion");
                 assert!(!events.iter().any(|e| e.status == "error"), "{name}: no intermediate error");
                 let finished = events.iter().find(|e| e.status == "finished").unwrap();
+                assert!(!outcome.cancelled);
+                assert_eq!(outcome.file_path, finished.file_path, "IPC result must retain the completion path independently of events");
                 assert_eq!(std::fs::read(finished.file_path.as_ref().unwrap()).unwrap(), *media);
                 if name == "expired" {
-                    assert!(events.iter().any(|e| e.message.as_deref() == Some("Refreshing media link…")));
+                    // yt-dlp may recover internally before the application retry is needed.
+                    assert!(expired_hits.load(Ordering::Relaxed) > expired_hits_before, "the stale media URL must actually be attempted");
+                    assert!(media_hits.load(Ordering::Relaxed) > media_hits_before, "recovery must fetch the fresh media URL");
                 }
                 drop(events);
                 state.reserve().await.unwrap();
@@ -602,8 +1011,9 @@ mod tests {
             let dir = root.join("cancel");
             std::fs::create_dir(&dir).unwrap();
             let task = tokio::spawn(run_download_inner(active, DownloadRequest {
+                request_id: Some("test-cancel".into()),
                 url: format!("{base}/media.mp4"), dir: dir.to_string_lossy().into(),
-                mode: crate::commands::DownloadMode::Best, format_id: None, options: Default::default(),
+                mode: crate::commands::DownloadMode::Best, format_id: None, options: Default::default(), file_options: Default::default(), overwrite_confirmed: false,
             }, dir, Some(b"{}".to_vec()), program, PathBuf::new(), Arc::new(move |event| {
                 if event.status == "starting" { notify.notify_one(); }
                 recorded.lock().unwrap().push(event);
@@ -611,7 +1021,9 @@ mod tests {
             started.notified().await;
             assert!(state.reserve().await.is_err());
             state.cancel_current().await.unwrap();
-            tokio::time::timeout(Duration::from_secs(15), task).await.unwrap().unwrap().unwrap();
+            let outcome = tokio::time::timeout(Duration::from_secs(15), task).await.unwrap().unwrap().unwrap();
+            assert!(outcome.cancelled);
+            assert!(outcome.file_path.is_none());
             let events = events.lock().unwrap();
             assert_eq!(events.iter().filter(|e| e.status == "cancelled").count(), 1);
             assert_eq!(events.iter().filter(|e| e.status == "starting").count(), 1, "cancel does not retry");

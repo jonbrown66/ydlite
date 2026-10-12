@@ -1,4 +1,10 @@
 export type DownloadMode = 'best' | 'p720' | 'mp3' | 'custom'
+export type FileOptions = {
+  naming: 'title' | 'authorTitle' | 'dateTitle'
+  conflict: 'skip' | 'number' | 'overwrite'
+  quality: 'compatible' | 'quality'
+  audioFormatId?: string | null
+}
 
 export type DependencyStatus = {
   ytdlp_ok: boolean
@@ -22,6 +28,8 @@ export type VideoFormat = {
   bitrateKbps?: number | null
   vcodec?: string | null
   acodec?: string | null
+  fps?: number | null
+  language?: string | null
 }
 
 export type PlaylistEntry = {
@@ -62,22 +70,21 @@ export type ParseVideoRequest = {
   options?: ParseOptions
 }
 
-export type ExtractSubtitlesRequest = {
-  url: string
-  dir: string
-  title: string
-  options?: ParseOptions
-}
-
 export type DownloadRequest = {
+  requestId?: string
   url: string
   dir: string
   mode: DownloadMode
   formatId?: string | null
   options: ParseOptions
+  fileOptions?: FileOptions
+  overwriteConfirmed?: boolean
 }
 
+export type DownloadResult = { cancelled: boolean; filePath: string | null; skipped?: boolean }
+
 export type DownloadProgressEvent = {
+  requestId?: string | null
   status: 'starting' | 'downloading' | 'processing' | 'finished' | 'cancelled' | 'error' | 'log'
   percent?: number | null
   total?: string | null
@@ -107,199 +114,4 @@ export type DownloadHistoryItem = {
   filePath: string
   url: string
   completedAt: string
-}
-
-export type SubtitleSegment = {
-  id: string
-  startMs: number
-  endMs: number
-  sourceText: string
-  translatedText?: string | null
-}
-
-export type SubtitleContentMode = 'source' | 'translated' | 'bilingual'
-
-export type SubtitleStyle = {
-  fontFamily: string
-  fontSize: number
-  translatedFontSize: number
-  primaryColor: string
-  translatedColor: string
-  outlineColor: string
-  backgroundColor: string
-  backgroundOpacity: number
-  outlineWidth: number
-  shadow: number
-  bold: boolean
-  boxed: boolean
-  position: 'top' | 'middle' | 'bottom'
-  marginVertical: number
-  translatedFirst: boolean
-}
-
-export type SubtitleExportFormat = 'srt' | 'vtt' | 'txt' | 'md'
-
-export type SubtitleProjectWorkspace = {
-  reviewStatus: 'draft' | 'reviewing' | 'approved'
-  style: SubtitleStyle
-  exportContent: SubtitleContentMode
-  exportFormat: SubtitleExportFormat
-  burnVideo: boolean
-  syncTranslatedStyle: boolean
-  outputDir?: string | null
-}
-
-export type SubtitleUsage = {
-  inputTokens: number
-  outputTokens: number
-  estimatedUsd: number
-}
-
-export type SubtitleProject = {
-  id: string
-  title: string
-  sourcePath: string
-  sourceFingerprint: string
-  durationMs: number
-  model: string
-  sourceLanguage?: string | null
-  targetLanguage?: string | null
-  completedChunks: string[]
-  segments: SubtitleSegment[]
-  usage: SubtitleUsage
-  status: string
-  createdAt: number
-  updatedAt: number
-  lastError?: string | null
-  asrProvider?: string | null
-  translationProvider?: string | null
-  artifacts: SubtitleArtifact[]
-  performance: SubtitlePerformance
-  workspace: SubtitleProjectWorkspace
-}
-
-export type SubtitleStageRecord = {
-  stage: string
-  startedAtMs: number
-  finishedAtMs?: number | null
-  durationMs?: number | null
-  status: string
-  detail?: string | null
-}
-
-export type SubtitlePerformance = {
-  stages: SubtitleStageRecord[]
-  encoder?: string | null
-  outputBytes?: number | null
-  uploadedBytes: number
-  retryCount: number
-}
-
-export type SubtitleArtifact = {
-  kind: 'subtitle' | 'video'
-  path: string
-  format: string
-  createdAt: number
-}
-
-export type GeminiSettings = {
-  hasApiKey: boolean
-  defaultModel: string
-  defaultTargetLanguage: string
-  maxCostUsd: number
-  maxConcurrency: 1 | 2
-  processingMode: 'local_free' | 'local_custom' | 'glm' | 'gemini'
-  whisperModel: string
-  whisperRuntime: 'cpu' | 'cuda'
-  hasOpenaiApiKey: boolean
-  openaiApiBase: string
-  openaiModel: string
-  hasGlmApiKey: boolean
-}
-
-export type CleanupRecord = {
-  id: string
-  cleanedAt: number
-  releasedBytes: number
-  temporaryBytes: number
-  webviewBytes: number
-}
-
-export type CacheStatus = {
-  cacheBytes: number
-  temporaryBytes: number
-  webviewBytes: number
-  modelBytes: number
-  projectBytes: number
-  records: CleanupRecord[]
-}
-
-export type WhisperModelInfo = {
-  id: string
-  name: string
-  description: string
-  downloadBytes: number
-  downloadSize: string
-  installed: boolean
-  path?: string | null
-}
-
-export type WhisperRuntimeInfo = {
-  id: string
-  name: string
-  description: string
-  downloadBytes: number
-  downloadSize: string
-  installed: boolean
-}
-
-export type WhisperDownloadEvent = {
-  assetType: 'model' | 'runtime'
-  id: string
-  status: string
-  percent: number
-  message: string
-}
-
-export type CostEstimate = {
-  model: string
-  durationMs: number
-  inputTokens: number
-  outputTokensLow: number
-  outputTokensHigh: number
-  estimatedUsdLow: number
-  estimatedUsdHigh: number
-  pricingEffectiveAt: string
-}
-
-export type SubtitleProgressEvent = {
-  projectId: string
-  stage: string
-  percent: number
-  chunkIndex?: number | null
-  chunkTotal?: number | null
-  message: string
-  inputTokens: number
-  outputTokens: number
-  recoverable: boolean
-}
-
-export type SubtitleTrackInfo = {
-  streamIndex: number
-  codec: string
-  language: string
-  title?: string | null
-  isDefault: boolean
-  isForced: boolean
-  isText: boolean
-}
-
-export type MediaSubtitleAnalysis = {
-  sourcePath: string
-  durationMs: number
-  detectedLanguage?: string | null
-  tracks: SubtitleTrackInfo[]
-  recommendedTrack?: SubtitleTrackInfo | null
-  strategy: 'extract_chinese' | 'translate_subtitle' | 'transcribe_audio'
-  message: string
 }

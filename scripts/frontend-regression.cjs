@@ -2,6 +2,7 @@
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const artifactDir = process.env.FRONTEND_ARTIFACT_DIR || 'artifacts/frontend';
 
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' });
@@ -13,15 +14,11 @@ const fs = require('node:fs');
     await page.route(/\/src\/main-app\.ts(?:\?[^?]*)?$/, route => route.request().url().includes('regression-real') ? route.continue() : route.fulfill({ contentType: 'application/javascript', body: `
       import { mockIPC, mockWindows } from '/node_modules/@tauri-apps/api/mocks.js';
       import { emit } from '/node_modules/@tauri-apps/api/event.js';
-      let finishDownload;
-      let subtitleProject;
-      window.testExports = [];
-      window.testBurnCount = 0;
-      window.testEmit = async (name, payload) => { await emit(name, payload); if (['finished','cancelled','error'].includes(payload.status)) { finishDownload?.(); finishDownload = undefined; } };
+      let finishDownload, requestId;
+      window.testEmit = async (name, payload) => { await emit(name, {requestId, ...payload}); if (['finished','cancelled','error'].includes(payload.status)) { finishDownload?.({cancelled:payload.status==='cancelled',filePath:payload.filePath || null}); finishDownload = undefined; } };
       window.destroyCount = 0;
       window.testMinimizeCount = 0;
       window.testMaximized = false;
-      const settings = { hasApiKey: false, defaultModel: 'test', defaultTargetLanguage: 'zh-CN', maxCostUsd: 2, maxConcurrency: 2, processingMode: 'local_free', whisperModel: 'test', whisperRuntime: 'cpu', hasOpenaiApiKey: false, openaiApiBase: 'https://example.com/v1', openaiModel: 'test', hasGlmApiKey: false };
       mockWindows('main');
       mockIPC((cmd, args) => {
         if (cmd === 'plugin:window|minimize') { window.testMinimizeCount++; return; }
@@ -29,23 +26,11 @@ const fs = require('node:fs');
         if (cmd === 'plugin:window|unmaximize') { window.testMaximized = false; return; }
         if (cmd === 'plugin:window|is_maximized') return window.testMaximized;
         if (cmd === 'plugin:dialog|open') return window.testVideoPath || 'C:/test-downloads/source.mp4';
-        if (cmd === 'analyze_subtitle_source') return { sourcePath: args.request.sourcePath, durationMs: 124000, detectedLanguage: 'en', tracks: [], recommendedTrack: {streamIndex: 1, codec: 'srt', language: 'en', isDefault: true, isForced: false, isText: true}, strategy: 'translate_subtitle', message: 'Found English subtitles' };
-        if (cmd === 'create_subtitle_project') return subtitleProject = {id:'test-subtitle',title:'Subtitle test',sourcePath:args.request.sourcePath,sourceFingerprint:'test',durationMs:124000,model:'test',sourceLanguage:'en',targetLanguage:'zh-CN',completedChunks:[],segments:[],usage:{inputTokens:0,outputTokens:0,estimatedUsd:0},status:'draft',createdAt:Date.now(),updatedAt:Date.now(),artifacts:[],performance:{stages:[],uploadedBytes:0,retryCount:0},workspace:{}};
-        if (cmd === 'save_subtitle_project_workspace') { subtitleProject.workspace = args.request.workspace; return subtitleProject; }
-        if (cmd === 'import_subtitle_track' || cmd === 'start_bing_translation') { subtitleProject.segments = [{id:'one',startMs:0,endMs:2000,sourceText:'Hello',translatedText:'你好'}]; return subtitleProject; }
-        if (cmd === 'export_subtitles') { window.testExports.push(args.request); subtitleProject.artifacts.push({kind:'subtitle',path:args.request.outputPath,format:'srt',createdAt:Date.now()}); return args.request.outputPath; }
-        if (cmd === 'burn_subtitles') { window.testBurnCount++; return args.request.outputPath; }
-        if (cmd === 'list_subtitle_projects') return subtitleProject ? [subtitleProject] : [];
-        if (cmd === 'start_download') return new Promise(resolve => { finishDownload = resolve; });
+        if (cmd === 'start_download') { requestId = args.request.requestId; return new Promise(resolve => { finishDownload = resolve; }); }
         if (cmd === 'plugin:window|close') return emit('tauri://close-requested');
         if (cmd === 'plugin:window|destroy') { window.destroyCount++; return; }
         if (cmd === 'check_dependencies') return { ytdlp_ok: true, ffmpeg_ok: true, ytdlp_path: 'yt-dlp', ffmpeg_path: 'ffmpeg', ytdlp_update_available: false };
-        if (cmd === 'get_gemini_settings') return {...settings};
-        if (cmd === 'save_gemini_settings') return Object.assign(settings, args.request);
-        if (cmd === 'list_whisper_models') return [{id:'test',name:'Whisper Small',description:'Compact model for faster transcription.',downloadSize:'181 MB',downloadBytes:189792256,installed:true},{id:'turbo',name:'Whisper Large V3 Turbo',description:'Higher accuracy for multilingual audio.',downloadSize:'548 MB',downloadBytes:574619648,installed:false}];
-        if (cmd === 'list_whisper_runtimes') return [{id:'cpu',name:'CPU',description:'Works on any computer.',downloadSize:'7.6 MB',downloadBytes:7969177,installed:true},{id:'cuda',name:'NVIDIA CUDA',description:'GPU acceleration for NVIDIA graphics.',downloadSize:'647 MB',downloadBytes:678428672,installed:false}];
         if (cmd.startsWith('list_')) return [];
-        if (cmd === 'get_cache_status') return { cacheBytes: 0, modelBytes: 0, projectBytes: 0, records: [] };
         if (cmd === 'parse_video') return { title: 'Sample video · A long title for layout verification', uploader: 'Example creator', duration: 124, originalUrl: args.request.url, resolvedUrl: args.request.url, site: 'example', parseStrategy: 'default', formats: [{formatId:'audio',ext:'m4a',vcodec:'none',acodec:'aac',filesize:4194304},{formatId: '720', ext: 'mp4', height: 720, vcodec: 'h264', acodec: 'none',filesize:8388608}] };
         if (cmd === 'get_tools_directory') return 'C:/tools';
         return false;
@@ -89,8 +74,8 @@ const fs = require('node:fs');
     await page.waitForFunction(() => getComputedStyle(document.querySelector('.tool-disclosure .disclosure-chevron')).transform === 'matrix(-1, 0, 0, -1, 0, 0)');
     assert.equal(await page.locator('#download-tools-panel').evaluate(el => el.closest('.app-collapsible').inert), false);
     await toolsToggle.evaluate(el => el.blur());
-    fs.mkdirSync('artifacts/frontend', {recursive:true});
-    await page.locator('.tool-disclosure').screenshot({path:'artifacts/frontend/download-tools.png'});
+    fs.mkdirSync(artifactDir, {recursive:true});
+    await page.locator('.tool-disclosure').screenshot({path:artifactDir + '/download-tools.png'});
     await toolsToggle.focus();
     await page.keyboard.press('Enter');
     assert.equal(await toolsToggle.getAttribute('aria-expanded'), 'false');
@@ -120,7 +105,7 @@ const fs = require('node:fs');
     await page.emulateMedia({forcedColors:'active'});
     await assertGroupFocus();
     await page.emulateMedia({forcedColors:'none'});
-    await page.screenshot({path:'artifacts/frontend/download-empty.png'});
+    await page.screenshot({path:artifactDir + '/download-empty.png'});
     await page.getByRole('button',{name:'Add cookies',exact:true}).focus();
     assert.equal(await page.locator('.input-row').evaluate(el=>getComputedStyle(el).outlineStyle),'none','focusing an adjacent button must not highlight the entire input group');
     await close.focus();
@@ -130,6 +115,9 @@ const fs = require('node:fs');
     await page.getByRole('button', { name: 'Analyze', exact: true }).click();
     await page.getByRole('heading', { name: /Sample video/ }).waitFor();
     const combo = page.getByRole('combobox').first();
+    assert.ok((await combo.innerText()).includes('Best available'));
+    await combo.click();
+    await page.getByRole('option', {name:/720p - mp4/}).click();
     await combo.focus();
     await page.keyboard.press('Tab');
     await page.keyboard.press('Shift+Tab');
@@ -144,15 +132,15 @@ const fs = require('node:fs');
     await page.keyboard.press('Enter');
     await page.getByRole('listbox').waitFor({state:'hidden'});
     assert.equal(await page.locator('.download-size-preview strong').innerText(),'≈ 12.0 MiB','preview includes video and audio');
-    fs.mkdirSync('artifacts/frontend', {recursive:true});
-    await page.screenshot({path:'artifacts/frontend/download.png'});
+    fs.mkdirSync(artifactDir, {recursive:true});
+    await page.screenshot({path:artifactDir + '/download.png'});
     await page.getByRole('button', {name:'Download',exact:true}).click();
     const downloadProgress = page.getByRole('progressbar',{name:'Download progress',exact:true});
     assert.equal(await downloadProgress.getAttribute('aria-valuenow'),'0');
     assert.equal(await page.locator('.progress-panel .progress-spinner').evaluate(el=>getComputedStyle(el).animationName),'progress-wait-pulse','reduced motion keeps gentle waiting feedback');
     assert.equal(await page.locator('.progress-panel .progress-fill').evaluate(el=>el.getBoundingClientRect().width),0,'preparing must not imply halfway complete');
     assert.equal(await page.locator('.progress-foot').innerText().then(text=>text.includes('12.0 MiB') && text.includes('Estimating…')),true);
-    await page.screenshot({path:'artifacts/frontend/download-preparing.png'});
+    await page.screenshot({path:artifactDir + '/download-preparing.png'});
     await page.evaluate(async () => {
       for (let i = 0; i < 1005; i++) await window.testEmit('download://progress',{status:'log',line:`fixture log ${i}`});
     });
@@ -172,7 +160,7 @@ const fs = require('node:fs');
     assert.equal(await page.locator('.sidebar-progress-head strong').innerText(),'40%','sidebar and page use the same corrected percentage');
     assert.notEqual(await page.locator('.progress-panel .progress-fill').evaluate(el=>getComputedStyle(el).transitionDuration),'0s','functional progress feedback remains enabled in reduced motion');
     assert.equal(await page.locator('.progress-foot').innerText().then(text=>text.includes('4.0 MiB / 10.0 MiB') && text.includes('≈ 0:04')),true);
-    await page.screenshot({path:'artifacts/frontend/download-progress.png'});
+    await page.screenshot({path:artifactDir + '/download-progress.png'});
     await page.evaluate(() => window.testEmit('download://progress', {status:'downloading',percent:null,speed:'1 MiB/s',metrics:{downloadedBytes:5242880,totalBytes:null,totalIsEstimate:true}}));
     assert.equal(await downloadProgress.getAttribute('aria-valuenow'),null);
     assert.equal(await page.locator('.progress-panel .progress-fill').getAttribute('style'),'width: 0%;');
@@ -189,9 +177,9 @@ const fs = require('node:fs');
     assert.equal(await page.locator('.log-box').count(),0,'the next download resets its logs');
     await page.evaluate(() => window.testEmit('download://progress', {status:'finished',filePath:'C:/test-downloads/first.mp4'}));
     await page.getByRole('button',{name:'Open file',exact:true}).waitFor();
-    assert.deepEqual((await page.locator('.download-actions button').allTextContents()).map(text=>text.trim()), ['Open folder','Open file','Create subtitles']);
-    await page.locator('.download-actions').screenshot({path:'artifacts/frontend/download-completed-actions.png'});
-    assert.equal(await page.getByRole('button', {name:'Create subtitles',exact:true}).isVisible(), true);
+    assert.deepEqual((await page.locator('.download-actions button').allTextContents()).map(text=>text.trim()), ['Open folder','Open file']);
+    await page.locator('.download-actions').screenshot({path:artifactDir + '/download-completed-actions.png'});
+    assert.equal(await page.getByRole('link', {name:'Subtitles',exact:true}).count(), 0);
     await page.getByRole('link',{name:'History',exact:true}).click();
     await page.getByRole('button',{name:'More download actions',exact:true}).click();
     await page.keyboard.press('Escape');
@@ -221,68 +209,7 @@ const fs = require('node:fs');
     await page.getByText('No matching tasks', {exact:true}).waitFor();
     await page.getByRole('button', {name:'Reset filters',exact:true}).click();
     assert.equal(await page.locator('.task-row').count(), 1);
-    await page.getByRole('group', {name:'Task type'}).getByRole('button', {name:'Subtitle projects',exact:true}).click();
-    await page.getByText('No matching tasks', {exact:true}).waitFor();
-    await page.getByRole('button', {name:'Reset filters',exact:true}).click();
-    await page.screenshot({path:'artifacts/frontend/tasks.png'});
-    await page.getByRole('link', {name:'Subtitles',exact:true}).click();
-    await page.evaluate(() => { window.testVideoPath = 'C:/test-downloads/A detailed recording with a very long filename that must not change the card height or squeeze the Replace action.mp4'; });
-    await page.getByRole('button', {name:/Choose a video/}).click();
-    await page.getByText('Subtitles found', {exact:true}).waitFor();
-    assert.equal(await page.locator('.file-copy strong').evaluate(el => {
-      const style = getComputedStyle(el);
-      return el.scrollWidth > el.clientWidth && style.textOverflow === 'ellipsis' && el.title === window.testVideoPath;
-    }), true, 'long filename is truncated with full path available');
-    assert.equal(await page.getByRole('link', {name:'Settings',exact:true}).count(), 1);
-    assert.equal(await page.getByRole('button', {name:'Settings',exact:true}).count(), 0);
-    assert.equal(await page.evaluate(() => document.documentElement.lang), 'en');
-    await page.getByRole('button', {name:'Customize output',exact:true}).click();
-    const firstPreset = page.getByRole('radio', {name:/Classic/});
-    await firstPreset.focus();
-    await page.keyboard.press('ArrowRight');
-    assert.equal(await page.getByRole('radio', {name:/Contrast/}).getAttribute('aria-checked'), 'true');
-    await page.keyboard.press('Home');
-    assert.equal(await firstPreset.getAttribute('aria-checked'), 'true');
-    assert.equal(await page.getByRole('button', {name:'Generate subtitles',exact:true}).evaluate(el => {
-      const rect = el.getBoundingClientRect(); return rect.top >= 0 && rect.bottom <= innerHeight;
-    }), true, 'primary action must stay visible with output settings open');
-    assert.equal(await page.locator('.subtitle-preview').evaluate(el => {
-      const preview = el.getBoundingClientRect();
-      const viewport = document.querySelector('.subtitle-layout').getBoundingClientRect();
-      return preview.top >= viewport.top && preview.bottom <= viewport.bottom;
-    }), true, 'entire preview must fit in the default window');
-    await firstPreset.evaluate(el => el.blur());
-    await page.screenshot({path:'artifacts/frontend/subtitles.png'});
-    for (const width of [1180, 900, 800, 720]) {
-      await page.setViewportSize({width,height:560});
-      assert.equal(await page.locator('.simple-subtitle').evaluate(el => el.scrollWidth <= el.clientWidth), true, 'subtitle overflow at '+width);
-      assert.equal(await page.locator('.generate-button').evaluate(el => {
-        const rect = el.getBoundingClientRect(); return rect.top >= 0 && rect.bottom <= innerHeight;
-      }), true, 'primary action visible at '+width);
-      await page.locator('.subtitle-preview').scrollIntoViewIfNeeded();
-      const previewBounds = await page.locator('.subtitle-preview').evaluate(el => {
-        const preview = el.getBoundingClientRect();
-        const viewport = document.querySelector('.subtitle-layout').getBoundingClientRect();
-        const footer = document.querySelector('.subtitle-actions').getBoundingClientRect();
-        return {top:preview.top,bottom:preview.bottom,viewportTop:viewport.top,viewportBottom:viewport.bottom,footerTop:footer.top};
-      });
-      // Chromium rounds scroll offsets to pixels while DOMRects retain fractions.
-      const rounding = 0.5;
-      assert.equal(previewBounds.top >= previewBounds.viewportTop - rounding && previewBounds.bottom <= previewBounds.viewportBottom + rounding && previewBounds.bottom <= previewBounds.footerTop + rounding, true, 'preview must be fully reachable without footer overlap at '+width+' '+JSON.stringify(previewBounds));
-    }
-    await page.screenshot({path:'artifacts/frontend/subtitles-small.png'});
-    await page.setViewportSize({width:1180,height:780});
-    await page.getByRole('checkbox', {name:'Burn subtitles into video',exact:true}).uncheck();
-    const contentSelect = page.getByRole('combobox', {name:'Content'});
-    await contentSelect.click();
-    await page.getByRole('option', {name:'Translated only',exact:true}).click();
-    await page.getByRole('button', {name:'Hide output options',exact:true}).click();
-    await page.getByText('Chinese subtitles only', {exact:true}).waitFor();
-    await page.getByRole('button', {name:'Generate subtitles',exact:true}).click();
-    await page.getByText('Subtitles ready.', {exact:true}).waitFor();
-    await page.getByRole('button', {name:'Open subtitles',exact:true}).waitFor();
-    assert.equal(await page.evaluate(() => window.testExports.at(-1).content), 'translated');
-    assert.equal(await page.evaluate(() => window.testBurnCount), 0, 'collapsed output settings must preserve no-video choice');
+    await page.screenshot({path:artifactDir + '/tasks.png'});
     await page.getByRole('link', {name:'Settings',exact:true}).click();
     await page.locator('.settings-actions').waitFor();
     assert.equal(await page.locator('.settings-sheet').evaluate(el => {
@@ -290,7 +217,7 @@ const fs = require('node:fs');
       return style.scrollbarGutter === 'stable' && style.overscrollBehaviorY === 'contain';
     }), true, 'settings scrolling reserves space and remains contained');
     assert.equal(await page.getByRole('button', {name:'Save changes',exact:true}).isDisabled(), true);
-    await page.locator('input[value="local_custom"]').check();
+    await page.getByRole('textbox', {name:'Default save folder'}).fill('C:/changed');
     await page.getByRole('link', {name:'Downloads',exact:true}).click();
     const dialog = page.getByRole('dialog');
     await dialog.waitFor();
@@ -300,9 +227,18 @@ const fs = require('node:fs');
     await page.getByRole('button',{name:'Discard changes',exact:true}).click();
     await dialog.waitFor({state:'hidden'});
     await page.getByRole('link', {name:'Settings',exact:true}).click();
-    assert.equal(await page.locator('input[value="local_free"]').isChecked(), true);
-    await page.screenshot({path:'artifacts/frontend/settings.png'});
-    await page.locator('input[value="local_custom"]').check();
+    assert.equal(await page.getByRole('textbox', {name:'Default save folder'}).inputValue(), 'C:/test-downloads');
+    await page.getByRole('combobox', {name:'Default format'}).click();
+    await page.getByRole('option', {name:'Audio only · MP3',exact:true}).click();
+    await page.getByRole('button', {name:'Save changes',exact:true}).click();
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('ydlite.downloadPreferences')).defaultQuality), 'mp3');
+    await page.getByRole('link', {name:'Downloads',exact:true}).click();
+    await page.getByRole('textbox', {name:'Video or audio URL'}).fill('https://example.com/audio-default');
+    await page.getByRole('button', {name:'Analyze',exact:true}).click();
+    assert.ok((await page.getByRole('combobox', {name:'Format',exact:true}).innerText()).includes('Audio only'));
+    await page.getByRole('link', {name:'Settings',exact:true}).click();
+    await page.screenshot({path:artifactDir + '/settings.png'});
+    await page.getByRole('textbox', {name:'Default save folder'}).fill('C:/changed');
     await close.click();
     await dialog.waitFor();
     await page.keyboard.press('Escape');
@@ -319,12 +255,12 @@ const fs = require('node:fs');
         return sheet.bottom <= footer.top && footer.bottom <= innerHeight;
       }), true, 'save bar must not cover settings at '+width);
     }
-    await page.screenshot({path:'artifacts/frontend/settings-small.png'});
+    await page.screenshot({path:artifactDir + '/settings-small.png'});
     await close.click();
     await dialog.waitFor();
     await page.getByRole('button',{name:'Discard changes',exact:true}).click();
     await page.waitForFunction(() => window.destroyCount === 1);
     assert.deepEqual(errors, []);
-    console.log('PASS: single focus indicator on input group, Button and Select; menu keyboard/high-contrast focus; gentle task feedback in reduced motion; close colors; dropdown keyboard/focus; cancellation; history deletion and filters; subtitle handoff; preset keyboard selection; visible primary action; translated SRT without video; discard; dialog focus; close confirmation; layouts at 4 sizes; no runtime errors.');
+    console.log('PASS: window chrome, keyboard/high-contrast focus, progress, cancellation, history, download settings, discard, close confirmation, responsive layouts; no runtime errors.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

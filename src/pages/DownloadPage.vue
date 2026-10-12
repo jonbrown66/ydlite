@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import checkIcon from 'iconoir/icons/check.svg?url'
 import checkSquareIcon from 'iconoir/icons/check-square.svg?url'
 import copyIcon from 'iconoir/icons/copy.svg?url'
 import cookieIcon from 'iconoir/icons/cookie.svg?url'
 import downloadIcon from 'iconoir/icons/download.svg?url'
-import emptyPageIcon from 'iconoir/icons/empty-page.svg?url'
 import folderIcon from 'iconoir/icons/folder.svg?url'
 import mediaVideoIcon from 'iconoir/icons/media-video.svg?url'
 import navArrowRightIcon from 'iconoir/icons/nav-arrow-right.svg?url'
@@ -16,10 +14,8 @@ import settingsIcon from 'iconoir/icons/settings.svg?url'
 import trashIcon from 'iconoir/icons/trash.svg?url'
 import xmarkIcon from 'iconoir/icons/xmark.svg?url'
 import {
-  cancelDownload,
   checkDependencies,
   checkYtdlpUpdate,
-  extractSubtitles,
   getToolsDirectory,
   installMissingTools,
   onDownloadProgress,
@@ -29,7 +25,6 @@ import {
   parseVideo,
   selectCookiesFile,
   selectDirectory,
-  startDownload,
   updateYtdlp,
 } from '../api/tauri'
 import { AppSelect } from '@/components/ui/select'
@@ -37,19 +32,22 @@ import AppDialog from '@/components/ui/AppDialog.vue'
 import AppCollapsible from '@/components/ui/AppCollapsible.vue'
 import DisclosureChevron from '@/components/ui/DisclosureChevron.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
-import { useTasksStore } from '@/stores/tasks'
-import { useActivityStore } from '@/stores/activity'
-import type { CookieSource, DependencyStatus, DownloadHistoryItem, DownloadProgressEvent, ToolInstallEvent, VideoInfo, VideoFormat, DownloadMode } from '../types'
+import { usePreferencesStore } from '@/stores/preferences'
+import { useDownloadQueueStore } from '@/stores/downloadQueue'
+import DownloadQueue from '@/components/DownloadQueue.vue'
+import DownloadOptionsFields from '@/components/DownloadOptionsFields.vue'
+import { normalizeQueueUrl, classifyQueueError } from '@/lib/downloadQueue'
+import { formatLabel, readFileOptions } from '@/lib/downloadOptions'
+import type { CookieSource, DependencyStatus, DownloadProgressEvent, ToolInstallEvent, VideoInfo, VideoFormat, DownloadMode } from '../types'
 
-const router = useRouter()
-const activity = useActivityStore()
+const preferences = usePreferencesStore()
+const downloadQueue = useDownloadQueueStore()
 const icons = {
   check: checkIcon,
   checkSquare: checkSquareIcon,
   copy: copyIcon,
   cookie: cookieIcon,
   download: downloadIcon,
-  emptyPage: emptyPageIcon,
   folder: folderIcon,
   mediaVideo: mediaVideoIcon,
   navArrowRight: navArrowRightIcon,
@@ -62,6 +60,24 @@ const icons = {
 
 type IconName = keyof typeof icons
 
+type DownloadTab = 'single' | 'multiple'
+const downloadTab = ref<DownloadTab>('single')
+const downloadTabs: Array<{ value: DownloadTab; label: string }> = [
+  { value: 'single', label: 'Single link' },
+  { value: 'multiple', label: 'Multiple links' },
+]
+const queueWorkspace = ref<InstanceType<typeof DownloadQueue> | null>(null)
+function onDownloadTabKeydown(event: KeyboardEvent, index: number) {
+  const key = event.key
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) return
+  event.preventDefault()
+  const target = key === 'Home' ? 0 : key === 'End' ? downloadTabs.length - 1
+    : (index + (key === 'ArrowRight' ? 1 : -1) + downloadTabs.length) % downloadTabs.length
+  const tab = downloadTabs[target]!
+  downloadTab.value = tab.value
+  document.getElementById(`downloads-tab-${tab.value}`)?.focus()
+}
+
 const url = ref('')
 const saveDir = ref('')
 const defaultDir = ref('')
@@ -72,7 +88,7 @@ const video = ref<VideoInfo | null>(null)
 const loadingDeps = ref(false)
 const toolsOpen = ref(false)
 const parsing = ref(false)
-const downloading = ref(false)
+const downloading = computed(() => downloadQueue.running)
 const progress = ref<DownloadProgressEvent | null>(null)
 const errorMessage = ref('')
 const errorDetail = ref('')
@@ -81,12 +97,8 @@ const hasLogs = ref(false)
 const logBuffer: string[] = []
 let logFlushTimer: number | undefined
 const completedFilePath = ref('')
-const extractedSubtitlePath = ref('')
-const extractingSubtitles = ref(false)
 const displayPercent = ref(0)
-const tasks = useTasksStore()
-const history = computed(() => tasks.downloads)
-const cancelling = ref(false)
+const cancelling = computed(() => downloadQueue.activeJob?.status === 'cancelling')
 const logsOpen = ref(false)
 const urlInput = ref<HTMLInputElement | null>(null)
 const dragActive = ref(false)
@@ -95,33 +107,25 @@ const showInstallConfirm = ref(false)
 const installing = ref(false)
 const updatingYtdlp = ref(false)
 const installEvents = ref<Record<string, ToolInstallEvent>>({})
-const copiedHistoryId = ref('')
 const detailsSection = ref<HTMLElement | null>(null)
-let copiedHistoryTimer: number | undefined
 let unlistenDownloadProgress: (() => void) | undefined
 let unlistenToolProgress: (() => void) | undefined
-let unregisterDownloadCanceller: (() => void) | undefined
 const lastParsedUrl = ref('')
 const clipboardTipUrl = ref('')
 const showClipboardTip = ref(false)
 
-function openSubtitleWorkspace(path = '') {
-  void router.push({ name: 'subtitles', query: path ? { source: path } : undefined })
-}
-
-const selectedFormatId = ref<string>('')
+const selectedFormatId = ref<string>('best')
+const showDetailedFormats = ref(false)
+const fileOptions = ref(readFileOptions(preferences.settings.fileOptions))
+const selectedAudioId = computed({ get: () => fileOptions.value.audioFormatId || '', set: (value: string) => { fileOptions.value.audioFormatId = value || null } })
+const audioOptions = computed(() => [{ value: '', label: 'Automatic audio track' }, ...(video.value?.formats || []).filter(f => f.vcodec === 'none' && f.acodec && f.acodec !== 'none').map(f => ({ value: f.formatId, label: formatLabel(f) }))])
+watch(selectedFormatId, () => { fileOptions.value.audioFormatId = null })
 
 const selectedEntries = ref<Record<string, boolean>>({})
 
-const queueActive = ref(false)
-const queueTotal = ref(0)
-const queueCurrentIndex = ref(0)
-const queueCompleted = ref(0)
-const queueFailed = ref(0)
-const currentDownloadTitle = ref('')
+const queueActive = computed(() => downloadQueue.running)
 const currentDownloadUrl = ref('')
-
-let queueStopRequested = false
+const failedEntries = computed(() => downloadQueue.failed.filter(job => video.value?.entries?.some(entry => normalizeQueueUrl(entry.url) === normalizeQueueUrl(job.url))))
 
 const missingTools = computed(() => {
   const missing: string[] = []
@@ -130,8 +134,8 @@ const missingTools = computed(() => {
   return missing
 })
 
-const canParse = computed(() => Boolean(url.value.trim() && !parsing.value && !downloading.value && !extractingSubtitles.value))
-const canDownload = computed(() => Boolean(video.value && saveDir.value && !parsing.value && !downloading.value && !extractingSubtitles.value && !hasMissingTools.value))
+const canParse = computed(() => Boolean(url.value.trim() && !parsing.value && !downloading.value))
+const canDownload = computed(() => Boolean(video.value && saveDir.value && !parsing.value && !downloading.value && !hasMissingTools.value))
 const selectedCount = computed(() => video.value?.entries?.filter(entry => selectedEntries.value[entry.url]).length ?? 0)
 const hasMissingTools = computed(() => missingTools.value.length > 0)
 const depsChecked = computed(() => deps.value !== null)
@@ -158,17 +162,6 @@ const progressIndeterminate = computed(() => Boolean(progress.value && (
   || (progress.value.status === 'downloading' && !Number.isFinite(progress.value.percent))
 )))
 const progressTrackPercent = computed(() => progressIndeterminate.value ? 0 : progressPercent.value)
-
-const queueProgressPercent = computed(() => {
-  if (!queueTotal.value) return 0
-  const settledItems = queueCompleted.value + queueFailed.value
-  const terminal = ['finished', 'cancelled', 'error'].includes(progress.value?.status || '')
-  const completedThroughCurrent = terminal ? Math.max(settledItems, queueCurrentIndex.value) : settledItems
-  const currentItemProgress = queueActive.value && !terminal && !progressIndeterminate.value && queueCurrentIndex.value > completedThroughCurrent
-    ? progressPercent.value / 100
-    : 0
-  return Math.max(0, Math.min(100, ((completedThroughCurrent + currentItemProgress) / queueTotal.value) * 100))
-})
 
 const progressStatusText = computed(() => {
   if (cancelling.value) return 'Cancelling…'
@@ -201,45 +194,10 @@ const durationText = computed(() => {
     : `${minutes}:${seconds.toString().padStart(2, '0')}`
 })
 
-const availableFormats = computed(() => {
-  if (!video.value?.formats) return []
-  
-  const seenHeights = new Set<number>()
-  const formatsList: Array<{ label: string; formatId: string; height: number; type: 'video' | 'audio' }> = []
-  
-  for (const fmt of video.value.formats) {
-    if (fmt.vcodec && fmt.vcodec !== 'none') {
-      const height = fmt.height ?? 0
-      if (height > 0 && !seenHeights.has(height)) {
-        seenHeights.add(height)
-        let label = `${height}p`
-        if (fmt.note && fmt.note.trim().toLowerCase() !== `${height}p`) {
-          label += ` (${fmt.note})`
-        }
-        if (fmt.ext) {
-          label += ` - ${fmt.ext}`
-        }
-        formatsList.push({
-          label,
-          formatId: fmt.formatId,
-          height,
-          type: 'video'
-        })
-      }
-    }
-  }
-  
-  formatsList.sort((a, b) => b.height - a.height)
-  
-  formatsList.push({
-    label: 'Audio only · MP3',
-    formatId: 'bestaudio',
-    height: 0,
-    type: 'audio'
-  })
-  
-  return formatsList
-})
+const availableFormats = computed(() => (video.value?.formats || [])
+  .filter(fmt => fmt.vcodec && fmt.vcodec !== 'none')
+  .map(fmt => ({ label: formatLabel(fmt), formatId: fmt.formatId, height: fmt.height || 0 }))
+  .sort((a, b) => b.height - a.height))
 
 const selectedFormat = computed(() => {
   if (!video.value?.formats) return null
@@ -264,9 +222,11 @@ const estimatedDownloadBytes = computed(() => {
   if (video.value?.isPlaylist) return null
   // yt-dlp returns formats in ascending preference order. This is a preview;
   // the actual requested streams and byte totals take over during download.
-  const audio = video.value?.formats?.filter(f => f.vcodec === 'none' && f.acodec && f.acodec !== 'none') || []
+  const audio = video.value?.formats?.filter(f => f.vcodec === 'none' && f.acodec && f.acodec !== 'none' && (!fileOptions.value.audioFormatId || f.formatId === fileOptions.value.audioFormatId)) || []
   if (selectedFormatId.value === 'bestaudio') return formatSize(audio.at(-1))
-  const chosen = selectedFormat.value
+  const candidates = video.value?.formats?.filter(f => f.vcodec && f.vcodec !== 'none' && (selectedFormatId.value !== 'p720' || (f.height || 0) <= 720)) || []
+  const chosen = ['best', 'p720'].includes(selectedFormatId.value)
+    ? (fileOptions.value.quality === 'quality' ? candidates.at(-1) : candidates.filter(f => f.ext === 'mp4').at(-1) || candidates.at(-1)) : selectedFormat.value
   const videoSize = formatSize(chosen)
   if (!videoSize || !chosen) return null
   if (chosen.acodec && chosen.acodec !== 'none') return videoSize
@@ -291,12 +251,15 @@ const remainingTimeText = computed(() => {
     default: return progress.value?.eta ? `≈ ${progress.value.eta}` : 'Estimating…'
   }
 })
-const formatOptions = computed(() =>
-  availableFormats.value.map(format => ({
+const formatOptions = computed(() => [
+  { value: 'best', label: 'Best available · prefer MP4' },
+  { value: 'p720', label: 'Up to 720p · prefer MP4' },
+  { value: 'bestaudio', label: 'Audio only · MP3' },
+  ...(showDetailedFormats.value ? availableFormats.value : availableFormats.value.filter(format => format.formatId === selectedFormatId.value)).map(format => ({
     value: format.formatId,
     label: format.label,
   })),
-)
+])
 
 function iconStyle(name: IconName) {
   return { '--icon-url': `url("${icons[name]}")` }
@@ -304,11 +267,10 @@ function iconStyle(name: IconName) {
 
 onMounted(() => {
   window.addEventListener('focus', checkClipboard)
-  defaultDir.value = localStorage.getItem('ydlite.defaultDir') || ''
+  defaultDir.value = preferences.settings.defaultDir
   saveDir.value = defaultDir.value
   setAsDefault.value = Boolean(defaultDir.value)
-  cookiesFilePath.value = localStorage.getItem('ydlite.cookiesFilePath') || ''
-  unregisterDownloadCanceller = activity.registerDownloadCanceller(handleGlobalDownloadCancel)
+  cookiesFilePath.value = preferences.settings.cookiesFilePath
   void Promise.all([
     onDownloadProgress(handleProgress),
     onToolInstallProgress(handleToolInstallProgress),
@@ -323,12 +285,34 @@ onMounted(() => {
   })
 })
 
+watch(() => preferences.settings, (next, previous) => {
+  if (downloading.value || queueActive.value) return
+  if (!saveDir.value || saveDir.value === previous.defaultDir) saveDir.value = next.defaultDir
+  defaultDir.value = next.defaultDir
+  setAsDefault.value = Boolean(next.defaultDir && saveDir.value === next.defaultDir)
+  cookiesFilePath.value = next.cookiesFilePath
+  if (JSON.stringify(fileOptions.value) === JSON.stringify(previous.fileOptions)) fileOptions.value = readFileOptions(next.fileOptions)
+  if (!next.clipboardSuggestions) showClipboardTip.value = false
+})
+watch(() => downloadQueue.running, running => {
+  if (running) return
+  const job = [...downloadQueue.jobs].reverse().find(job => normalizeQueueUrl(job.url) === normalizeQueueUrl(currentDownloadUrl.value))
+  if (job && ['failed', 'cancelled'].includes(job.status)) {
+    progress.value = { ...progress.value, status: job.status === 'failed' ? 'error' : 'cancelled' }
+    if (job.error) errorMessage.value = job.error.message
+  }
+  else if (job?.status === 'completed') {
+    progress.value = { ...progress.value, status: 'finished', percent: 100 }
+    updateDisplayedProgress(100, true)
+    completedFilePath.value = job.filePath || ''
+  } else progress.value = null
+})
+onActivated(() => { if (deps.value && !downloading.value) void refreshDependencies() })
+
 onBeforeUnmount(() => {
   resetLogs()
-  if (copiedHistoryTimer) window.clearTimeout(copiedHistoryTimer)
   unlistenDownloadProgress?.()
   unlistenToolProgress?.()
-  unregisterDownloadCanceller?.()
   window.removeEventListener('focus', checkClipboard)
 })
 
@@ -363,6 +347,8 @@ async function refreshYtdlpUpdate() {
 }
 
 async function checkClipboard() {
+  if (downloadTab.value !== 'single') return
+  if (!preferences.settings.clipboardSuggestions) return
   try {
     const text = await navigator.clipboard.readText()
     const trimmed = text.trim()
@@ -386,13 +372,13 @@ async function handleSelectCookiesFile() {
   const selected = await selectCookiesFile()
   if (selected) {
     cookiesFilePath.value = selected
-    localStorage.setItem('ydlite.cookiesFilePath', selected)
+    preferences.update({ cookiesFilePath: selected })
   }
 }
 
 function clearCookiesFile() {
   cookiesFilePath.value = ''
-  localStorage.removeItem('ydlite.cookiesFilePath')
+  preferences.update({ cookiesFilePath: '' })
 }
 
 function handleUseClipboardUrl() {
@@ -403,6 +389,7 @@ function handleUseClipboardUrl() {
 
 async function scrollToVideoDetails() {
   await nextTick()
+  if (downloadTab.value !== 'single') return
   detailsSection.value?.scrollIntoView({
     behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
     block: 'start',
@@ -413,8 +400,8 @@ async function handleParse() {
   if (!canParse.value) return
   clearError()
   video.value = null
+  currentDownloadUrl.value = ''
   completedFilePath.value = ''
-  extractedSubtitlePath.value = ''
   progress.value = null
   resetDisplayedProgress()
   parsing.value = true
@@ -424,6 +411,7 @@ async function handleParse() {
   try {
     const result = await parseVideo({ url: url.value, options: { cookieSource: selectedCookieSource() } })
     video.value = result
+    fileOptions.value.audioFormatId = null
     if (result.resolvedUrl && result.resolvedUrl !== url.value.trim()) {
       url.value = result.resolvedUrl
     }
@@ -433,9 +421,8 @@ async function handleParse() {
       result.entries.forEach(e => {
         selectedEntries.value[e.url] = true
       })
-    } else if (availableFormats.value.length > 0) {
-      selectedFormatId.value = availableFormats.value[0].formatId
     }
+    selectedFormatId.value = preferences.settings.defaultQuality === 'mp3' ? 'bestaudio' : preferences.settings.defaultQuality
     await scrollToVideoDetails()
   } catch (error) {
     showError(error, 'Unable to analyze this URL. Check that it is accessible and supported.')
@@ -457,190 +444,63 @@ function handleDefaultToggle() {
     saveDefaultDir(saveDir.value)
   } else {
     defaultDir.value = ''
-    localStorage.removeItem('ydlite.defaultDir')
+    preferences.update({ defaultDir: '' })
   }
 }
 
-async function handleDownload(targetUrl?: string) {
+function queueOptions() {
+  const selected = selectedFormatId.value
+  const mode: DownloadMode = selected === 'bestaudio' ? 'mp3' : selected === 'p720' ? 'p720' : selected === 'best' ? 'best' : 'custom'
+  return { dir: saveDir.value, mode, formatId: mode === 'custom' ? selected : null, cookieSource: video.value?.cookieSource || selectedCookieSource(), fileOptions: { ...fileOptions.value } }
+}
+
+async function handleDownload() {
   if (!canDownload.value) return
-  clearError()
-  resetLogs()
-  completedFilePath.value = ''
-  extractedSubtitlePath.value = ''
-  resetDisplayedProgress()
+  clearError(); resetLogs(); completedFilePath.value = ''; resetDisplayedProgress()
   progress.value = { status: 'starting' }
-  downloading.value = true
-  if (setAsDefault.value && saveDir.value) saveDefaultDir(saveDir.value)
-  
-  const downloadUrl = targetUrl || video.value?.resolvedUrl || url.value
-  currentDownloadUrl.value = downloadUrl
-  let mode: DownloadMode = 'best'
-  let formatId: string | null = null
-
-  if (selectedFormatId.value) {
-    if (selectedFormatId.value === 'bestaudio') {
-      mode = 'mp3'
-    } else {
-      mode = 'custom'
-      formatId = selectedFormatId.value
-    }
-  }
-
+  const target = video.value?.resolvedUrl || url.value
+  currentDownloadUrl.value = normalizeQueueUrl(target) || target
   try {
-    activity.beginDownload({ title: video.value?.title || 'Downloads' })
-    const activeCookieSource = video.value?.cookieSource || selectedCookieSource()
-    await startDownload({ url: downloadUrl, dir: saveDir.value, mode, formatId, options: { cookieSource: activeCookieSource } })
-  } catch (error) {
-    if (progress.value?.status !== 'cancelled') {
-      progress.value = { ...progress.value, status: 'error' }
-      showError(error, 'Download failed. See details and try again.')
-      activity.finishDownload({ state: 'failed', detail: 'Download failed. See details and try again.' })
-    }
-  } finally {
-    if (!queueActive.value) {
-      downloading.value = false
-      cancelling.value = false
-    }
-  }
+    if (setAsDefault.value) saveDefaultDir(saveDir.value)
+    const ids = downloadQueue.add([{ url: target, title: video.value?.title, extractor: video.value?.extractor }], queueOptions())
+    const existing = downloadQueue.jobs.find(job => normalizeQueueUrl(job.url) === normalizeQueueUrl(target) && !['completed', 'cancelled'].includes(job.status))
+    if (!ids.length && existing) {
+      downloadQueue.changeOptions(existing.id, queueOptions())
+      if (existing.status === 'failed') await downloadQueue.retry([existing.id])
+      else await downloadQueue.run([existing.id])
+    } else await downloadQueue.run(ids)
+  } catch (error) { progress.value = { status: 'error' }; showError(error, 'Unable to save or start this download.') }
 }
 
-async function handleExtractSubtitles() {
-  if (!video.value || video.value.isPlaylist || !saveDir.value || extractingSubtitles.value) return
-
-  clearError()
-  extractedSubtitlePath.value = ''
-  extractingSubtitles.value = true
+async function handleBatchDownload(retryFailed = false) {
+  if (!canDownload.value || !video.value?.entries) return
+  clearError(); resetLogs(); completedFilePath.value = ''; resetDisplayedProgress()
+  progress.value = null
   try {
-    extractedSubtitlePath.value = await extractSubtitles({
-      url: video.value.resolvedUrl || url.value,
-      dir: saveDir.value,
-      title: video.value.title,
-      options: { cookieSource: video.value.cookieSource || selectedCookieSource() },
-    })
-  } catch (error) {
-    showError(error, 'Unable to extract site subtitles. See details.')
-  } finally {
-    extractingSubtitles.value = false
-  }
-}
-
-async function downloadPromise(targetUrl: string, title: string) {
-  resetLogs()
-  completedFilePath.value = ''
-  resetDisplayedProgress()
-  progress.value = { status: 'starting' }
-  downloading.value = true
-  currentDownloadTitle.value = title
-  currentDownloadUrl.value = targetUrl
-
-  let mode: DownloadMode = 'best'
-  let formatId: string | null = null
-
-  if (selectedFormatId.value) {
-    if (selectedFormatId.value === 'bestaudio') {
-      mode = 'mp3'
-    } else {
-      mode = 'custom'
-      formatId = selectedFormatId.value
+    if (setAsDefault.value) saveDefaultDir(saveDir.value)
+    if (retryFailed) await downloadQueue.retry(failedEntries.value.map(job => job.id))
+    else {
+      const selected = video.value.entries.filter(entry => selectedEntries.value[entry.url])
+      const ids = downloadQueue.add(selected, queueOptions())
+      const selectedUrls = new Set(selected.map(entry => normalizeQueueUrl(entry.url)))
+      const existing = downloadQueue.ready.filter(job => selectedUrls.has(normalizeQueueUrl(job.url))).map(job => job.id)
+      await downloadQueue.run([...new Set([...ids, ...existing])])
     }
-  }
-
-  activity.beginDownload({
-    title,
-    queue: {
-      total: queueTotal.value,
-      current: queueCurrentIndex.value,
-      completed: queueCompleted.value,
-      failed: queueFailed.value,
-    },
-  })
-  const activeCookieSource = video.value?.cookieSource || selectedCookieSource()
-  // IPC completion owns queue advancement; progress events can arrive before rejection.
-  await startDownload({ url: targetUrl, dir: saveDir.value, mode, formatId, options: { cookieSource: activeCookieSource } })
-}
-
-async function handleBatchDownload() {
-  if (!canDownload.value || !video.value?.entries || queueActive.value) return
-  
-  const selectedList = video.value.entries.filter(e => selectedEntries.value[e.url])
-  if (selectedList.length === 0) {
-    showError(new Error('Select at least one video.'), 'No videos selected.')
-    return
-  }
-
-  clearError()
-  queueStopRequested = false
-  queueActive.value = true
-  if (setAsDefault.value && saveDir.value) saveDefaultDir(saveDir.value)
-  queueTotal.value = selectedList.length
-  queueCurrentIndex.value = 0
-  queueCompleted.value = 0
-  queueFailed.value = 0
-
-  for (let i = 0; i < selectedList.length; i++) {
-    if (queueStopRequested) break
-    queueCurrentIndex.value = i + 1
-    const item = selectedList[i]
-    
-    try {
-      await downloadPromise(item.url, item.title)
-      if (progress.value?.status === 'cancelled') queueStopRequested = true
-      else queueCompleted.value++
-    } catch (e) {
-      queueFailed.value++
-      showError(e, 'A queued download failed. See details.')
-    }
-    activity.updateDownloadQueue({
-      total: queueTotal.value,
-      current: queueCurrentIndex.value,
-      completed: queueCompleted.value,
-      failed: queueFailed.value,
-      active: queueActive.value,
-    }, currentDownloadTitle.value || item.title)
-  }
-
-  const cancelled = queueStopRequested
-  queueActive.value = false
-  downloading.value = false
-  currentDownloadTitle.value = ''
-  cancelling.value = false
-  activity.finishDownload({
-    state: cancelled ? 'cancelled' : queueFailed.value > 0 ? 'failed' : 'completed',
-    detail: cancelled
-      ? 'Download queue cancelled'
-      : queueFailed.value
-        ? `Queue complete: ${queueCompleted.value} succeeded, ${queueFailed.value} failed`
-        : `Download queue complete: ${queueCompleted.value} videos`,
-  })
-}
-
-function cancelQueue() {
-  queueStopRequested = true
-  void handleCancel()
-}
-
-async function handleGlobalDownloadCancel() {
-  if (queueActive.value) queueStopRequested = true
-  await handleCancel()
+  } catch (error) { showError(error, 'Unable to save or start the download queue.') }
 }
 
 function selectAllEntries(val: boolean) {
-  if (downloading.value || queueActive.value) return
-  if (!video.value?.entries) return
-  video.value.entries.forEach(e => {
-    selectedEntries.value[e.url] = val
-  })
+  if (downloading.value || !video.value?.entries) return
+  video.value.entries.forEach(entry => { selectedEntries.value[entry.url] = val })
 }
-
-
+async function cancelQueue() {
+  try { await downloadQueue.stopQueue() }
+  catch (error) { showError(error, 'Unable to cancel. Try again.') }
+}
 async function handleCancel() {
-  if (cancelling.value) return
-  cancelling.value = true
-  try { await cancelDownload() }
-  catch (error) {
-    cancelling.value = false
-    showError(error, 'Unable to cancel. Try again.')
-  }
+  if (cancelling.value || !downloadQueue.activeId) return
+  try { await downloadQueue.cancel(downloadQueue.activeId) }
+  catch (error) { showError(error, 'Unable to cancel. Try again.') }
 }
 
 async function handleInstallTools() {
@@ -725,6 +585,8 @@ function handleLogsToggle(event: Event) {
 }
 
 function handleProgress(event: DownloadProgressEvent) {
+  if (event.requestId && event.requestId !== downloadQueue.attemptId) return
+  if (downloadQueue.activeJob && normalizeQueueUrl(downloadQueue.activeJob.url) !== normalizeQueueUrl(currentDownloadUrl.value)) return
   if (event.line) {
     logBuffer.push(event.line)
     if (logBuffer.length > 1000) logBuffer.splice(0, logBuffer.length - 1000)
@@ -746,43 +608,8 @@ function handleProgress(event: DownloadProgressEvent) {
     updateDisplayedProgress(nextEvent.percent)
   }
   if (event.filePath) completedFilePath.value = event.filePath
-  if (event.status === 'finished' && event.filePath && video.value) {
-    addHistory({
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      title: currentDownloadTitle.value || video.value.title,
-      extractor: video.value.extractor,
-      filePath: event.filePath,
-      url: currentDownloadUrl.value || url.value,
-      completedAt: new Date().toISOString(),
-    })
-  }
 
-}
 
-async function copyHistoryUrl(item: DownloadHistoryItem) {
-  try {
-    await navigator.clipboard.writeText(item.url)
-    copiedHistoryId.value = item.id
-    if (copiedHistoryTimer) window.clearTimeout(copiedHistoryTimer)
-    copiedHistoryTimer = window.setTimeout(() => {
-      if (copiedHistoryId.value === item.id) copiedHistoryId.value = ''
-      copiedHistoryTimer = undefined
-    }, 1200)
-  } catch (error) {
-    showError(error, 'Unable to copy URL.')
-  }
-}
-
-async function openHistoryFolder(item: DownloadHistoryItem) {
-  try {
-    await openParentFolder(item.filePath)
-  } catch (error) {
-    showError(error, 'Unable to open task folder.')
-  }
-}
-
-function removeHistoryItem(item: DownloadHistoryItem) {
-  tasks.removeDownload(item.id)
 }
 
 function handleDragOver(event: DragEvent) {
@@ -797,7 +624,12 @@ function handleDragLeave(event: DragEvent) {
 function handleDrop(event: DragEvent) {
   event.preventDefault()
   dragActive.value = false
+  if (parsing.value || downloading.value || queueActive.value) return
   const text = event.dataTransfer?.getData('text/uri-list') || event.dataTransfer?.getData('text/plain') || ''
+  if (downloadTab.value === 'multiple') {
+    queueWorkspace.value?.appendLinks(text)
+    return
+  }
   const found = text.match(/https?:\/\/\S+/)
   if (found) {
     url.value = found[0].trim()
@@ -810,7 +642,7 @@ function handleToolInstallProgress(event: ToolInstallEvent) {
 
 function saveDefaultDir(path: string) {
   defaultDir.value = path
-  localStorage.setItem('ydlite.defaultDir', path)
+  preferences.update({ defaultDir: path })
 }
 
 function showError(error: unknown, fallback: string) {
@@ -826,108 +658,25 @@ function clearError() {
 }
 
 function friendlyErrorMessage(message: string, detail: string) {
-  const text = `${message}\n${detail}`.toLowerCase()
-  if (text.includes('没有可提取的站点字幕') || text.includes('did not return any subtitle files')) {
-    return completedFilePath.value
-      ? 'No site subtitles found. Use Create subtitles to transcribe the video.'
-      : 'No manual or automatic subtitles available.'
-  }
-  if (text.includes('未检测到 yt-dlp') || (text.includes('yt-dlp') && (text.includes('not found') || text.includes('no such file') || text.includes('unable to execute')))) {
-    return 'Unable to start yt-dlp. Check your tools and install missing components.'
-  }
-  if (text.includes('ffmpeg') && (text.includes('not found') || text.includes('no such file') || text.includes('unable to execute'))) {
-    return 'FFmpeg is required to merge video or convert audio.'
-  }
-  if (text.includes('cloudflare') || text.includes('anti-bot challenge') || text.includes('http error 403')) {
-    return 'Request blocked. Add cookies.txt or try again later.'
-  }
-  if (text.includes('bilibili') && (text.includes('http error 412') || text.includes('precondition failed'))) {
-    return 'Bilibili rejected the metadata request. Add cookies.txt and try again.'
-  }
-  if (text.includes('older than 90 days') || text.includes('use that to update')) {
-    return deps.value?.ytdlp_update_available
-      ? 'yt-dlp is outdated. Update it, then try again.'
-      : 'No yt-dlp update found. Check the tool path or try again later.'
-  }
-  if (text.includes('impersonate') || text.includes('impersonation')) {
-    return 'This link needs yt-dlp browser impersonation. The site may require extra dependencies or stricter access.'
-  }
-  if (text.includes('private') || text.includes('login') || text.includes('sign in') || text.includes('cookies')) {
-    return 'This link may need login cookies. Add cookies.txt, or close the browser that owns the cookies and retry.'
-  }
-  if (text.includes('unsupported url') || text.includes('no suitable extractor')) {
-    return 'yt-dlp does not support this URL, or the URL format is invalid.'
-  }
-  if (text.includes('timed out') || text.includes('connection') || text.includes('network') || text.includes('http error')) {
-    return 'Connection failed. Check your network or proxy.'
-  }
-  if (text.includes('requested format is not available') || text.includes('format is not available')) {
-    return 'The selected format is not available for this video.'
-  }
-  if (text.includes('permission denied') || text.includes('access is denied')) {
-    return 'No write permission for this folder. Choose another folder.'
-  }
-  if (text.includes('invalid argument') || text.includes('filename') || text.includes('path')) {
-    return 'The file path or name is invalid. Choose another folder and retry.'
-  }
-  return message
+  const failure = classifyQueueError({ message, detail })
+  return failure.kind === 'unknown' ? message : failure.message
 }
 
-function addHistory(item: DownloadHistoryItem) {
-  try { tasks.addDownload(item) }
-  catch (error) { showError(error, 'Download complete. Unable to save history.') }
-}
-function formatHistoryTime(value: string) {
-  return new Date(value).toLocaleString()
-}</script>
+</script>
 
 <template>
   <section class="download-page" :class="{ dragging: dragActive }" @dragover="handleDragOver" @dragleave="handleDragLeave" @drop="handleDrop">
     <div class="content-scroll">
     <section class="hero">
       <PageHeader title="Downloads" />
-      <div class="input-row-container">
-        <div class="input-row">
-          <input
-            ref="urlInput"
-            aria-label="Video or audio URL"
-            v-model="url"
-            class="url-input"
-            type="url"
-            placeholder="Paste a video URL"
-            :disabled="parsing || downloading"
-            @keydown.enter="handleParse"
-          />
-          <button
-            class="button cookie-file-button icon-only"
-            type="button"
-            :disabled="parsing || downloading"
-            :title="cookiesFilePath ? 'Replace cookies.txt' : 'Add cookies.txt for videos requiring sign-in'"
-            :aria-label="cookiesFilePath ? 'Replace cookies' : 'Add cookies'"
-            @click="handleSelectCookiesFile"
-          >
-            <span class="icon" aria-hidden="true" :style="iconStyle('cookie')" />
-          </button>
-          <button class="button primary parse-button" :class="{ parsing }" type="button" :disabled="!canParse" @click="handleParse">
-            <span class="icon" aria-hidden="true" :style="iconStyle('mediaVideo')" />
-            <span>{{ parsing ? 'Analyzing…' : 'Analyze' }}</span>
-          </button>
-        </div>
-        <div v-if="cookiesFilePath" class="cookies-inline-status">
-          <span :title="cookiesFilePath">cookies.txt: {{ cookiesFilePath }}</span>
-          <button class="link-button compact" type="button" :disabled="parsing || downloading || extractingSubtitles" @click="clearCookiesFile">Clear</button>
-        </div>
-        <Transition name="fade">
-          <div v-if="showClipboardTip" class="clipboard-tip-bubble">
-            <span class="tip-text" :title="clipboardTipUrl">Clipboard URL: {{ clipboardTipUrl }}</span>
-            <div class="tip-actions">
-              <button class="tip-btn primary" type="button" @click="handleUseClipboardUrl">Use</button>
-              <button class="tip-btn" type="button" @click="showClipboardTip = false">Dismiss</button>
-            </div>
-          </div>
-        </Transition>
+      <div class="download-tabs" role="tablist" aria-label="Download input mode">
+        <button v-for="(tab, index) in downloadTabs" :id="`downloads-tab-${tab.value}`" :key="tab.value"
+          class="download-tab" type="button" role="tab" :aria-selected="downloadTab === tab.value"
+          :aria-controls="`downloads-panel-${tab.value}`" :tabindex="downloadTab === tab.value ? 0 : -1"
+          @click="downloadTab = tab.value" @keydown="onDownloadTabKeydown($event, index)">
+          {{ tab.label }}
+        </button>
       </div>
-
       <Transition name="fade">
         <section v-if="depsChecked && hasMissingTools" class="download-readiness-card" aria-live="polite">
           <span class="download-readiness-mark"><span class="icon" aria-hidden="true" :style="iconStyle('settings')" /></span>
@@ -958,7 +707,7 @@ function formatHistoryTime(value: string) {
               <span class="status-square" />
               <span :title="deps?.ffmpeg_path || ''">ffmpeg {{ deps?.ffmpeg_ok ? 'Ready' : 'Missing' }}</span>
             </div>
-            <button class="link-button" type="button" :disabled="loadingDeps || parsing || downloading || extractingSubtitles" @click="handleCheckTools">
+            <button class="link-button" type="button" :disabled="loadingDeps || parsing || downloading" @click="handleCheckTools">
               <span class="icon" aria-hidden="true" :style="iconStyle('check')" />
               <span>{{ loadingDeps ? 'Checking…' : 'Check again' }}</span>
             </button>
@@ -981,11 +730,55 @@ function formatHistoryTime(value: string) {
 
     </section>
 
-    <section v-if="!video && !parsing" class="download-empty" aria-label="Download workspace">
+    <div id="downloads-panel-single" class="download-input-panel" role="tabpanel" aria-labelledby="downloads-tab-single" :hidden="downloadTab !== 'single'" tabindex="0">
+      <div class="input-row-container">
+        <div class="input-row">
+          <input
+            ref="urlInput"
+            aria-label="Video or audio URL"
+            v-model="url"
+            class="url-input"
+            type="url"
+            placeholder="Paste a video URL"
+            :disabled="parsing || downloading"
+            @keydown.enter="handleParse"
+          />
+          <button
+            class="button cookie-file-button icon-only"
+            type="button"
+            :disabled="parsing || downloading"
+            :title="cookiesFilePath ? 'Replace cookies.txt' : 'Add cookies.txt for videos requiring sign-in'"
+            :aria-label="cookiesFilePath ? 'Replace cookies' : 'Add cookies'"
+            @click="handleSelectCookiesFile"
+          >
+            <span class="icon" aria-hidden="true" :style="iconStyle('cookie')" />
+          </button>
+          <button class="button primary parse-button" :class="{ parsing }" type="button" :disabled="!canParse" @click="handleParse">
+            <span class="icon" aria-hidden="true" :style="iconStyle('mediaVideo')" />
+            <span>{{ parsing ? 'Analyzing…' : 'Analyze' }}</span>
+          </button>
+        </div>
+        <div v-if="cookiesFilePath" class="cookies-inline-status">
+          <span :title="cookiesFilePath">cookies.txt: {{ cookiesFilePath }}</span>
+          <button class="link-button compact" type="button" :disabled="parsing || downloading" @click="clearCookiesFile">Clear</button>
+        </div>
+        <Transition name="fade">
+          <div v-if="showClipboardTip" class="clipboard-tip-bubble">
+            <span class="tip-text" :title="clipboardTipUrl">Clipboard URL: {{ clipboardTipUrl }}</span>
+            <div class="tip-actions">
+              <button class="tip-btn primary" type="button" @click="handleUseClipboardUrl">Use</button>
+              <button class="tip-btn" type="button" @click="showClipboardTip = false">Dismiss</button>
+            </div>
+          </div>
+        </Transition>
+      </div>
+
+
+
+    <section v-if="!video && !parsing && !downloadQueue.jobs.length" class="download-empty" aria-label="Download workspace">
       <span class="empty-symbol"><span class="icon" aria-hidden="true" :style="iconStyle('mediaVideo')" /></span>
       <h2>Download from a link</h2>
       <p>Paste a video or audio URL above to choose a format and save it to your computer.</p>
-      <div class="local-source-link"><button class="link-button" type="button" @click="router.push({ name: 'subtitles' })">Subtitles for a local video <span aria-hidden="true">→</span></button></div>
     </section>
 
     <Transition name="reveal">
@@ -1030,40 +823,38 @@ function formatHistoryTime(value: string) {
         </div>
 
         <div class="download-block">
-          <div v-if="!video.isPlaylist && availableFormats.length" class="format-select-row">
+          <div v-if="formatOptions.length" class="format-select-row">
             <span>Format</span>
             <AppSelect
               v-model="selectedFormatId"
               :options="formatOptions"
-              :disabled="downloading || queueActive || extractingSubtitles"
+              :disabled="downloading || queueActive"
               aria-label="Format"
             />
           </div>
+
+          <button v-if="video.formats?.length && !video.isPlaylist" class="link-button compact format-details-toggle" type="button" :disabled="downloading" :aria-expanded="showDetailedFormats" @click="showDetailedFormats = !showDetailedFormats">{{ showDetailedFormats ? 'Use simple format choices' : 'Choose a specific format' }}</button>
+          <div v-if="audioOptions.length > 1 && !video.isPlaylist" class="format-select-row">
+            <span>Audio track</span>
+            <AppSelect v-model="selectedAudioId" :options="audioOptions" :disabled="downloading || (!!selectedFormat && selectedFormat.acodec !== 'none')" aria-label="Audio track" />
+          </div>
+          <p v-if="selectedFormat && selectedFormat.acodec !== 'none'" class="format-help">This format includes audio. Choose a video-only format to select a separate audio track.</p>
+          <p v-if="selectedFormat" class="format-help">The selected format is required. If it becomes unavailable, reanalyze or choose another format.</p>
+          <details class="file-options-details"><summary>Files and format preference</summary><DownloadOptionsFields v-model="fileOptions" :disabled="downloading || queueActive" /></details>
 
           <div class="format-select-row save-location-row">
             <span>Save to</span>
           <div class="path-row">
             <div class="path-display" :title="saveDir || 'No folder selected'">{{ saveDir || 'Choose a folder' }}</div>
-            <button class="button icon-button" type="button" title="Choose folder" aria-label="Choose folder" :disabled="downloading || queueActive || extractingSubtitles" @click="handleSelectDir">
+            <button class="button icon-button" type="button" title="Choose folder" aria-label="Choose folder" :disabled="downloading || queueActive" @click="handleSelectDir">
               <span class="icon" aria-hidden="true" :style="iconStyle('folder')" />
             </button>
           </div>
           </div>
           <label class="check-row">
-            <input v-model="setAsDefault" type="checkbox" :disabled="downloading || queueActive || extractingSubtitles" @change="handleDefaultToggle" />
+            <input v-model="setAsDefault" type="checkbox" :disabled="downloading || queueActive" @change="handleDefaultToggle" />
             <span>Use as default folder</span>
           </label>
-
-          <div v-if="queueActive" class="queue-status-panel">
-            <div class="queue-status-head">
-              <span>Queue {{ queueCurrentIndex }}/{{ queueTotal }}</span>
-              <span>Completed {{ queueCompleted }} · Failed {{ queueFailed }}</span>
-            </div>
-            <div class="queue-progress-track">
-              <div class="queue-progress-fill" :style="{ width: `${queueProgressPercent}%` }" />
-            </div>
-            <div class="queue-status-title" :title="currentDownloadTitle">Downloading: {{ currentDownloadTitle }}</div>
-          </div>
 
           <p v-if="!progress && !video.isPlaylist" class="download-size-preview">Estimated download size <strong>{{ downloadSizeText }}</strong></p>
           <div v-if="progress" class="progress-panel" :class="{ 'is-finished': progress.status === 'finished' }" aria-live="polite">
@@ -1083,8 +874,9 @@ function formatHistoryTime(value: string) {
           </div>
 
           <div class="download-actions">
+            <button v-if="video.isPlaylist && failedEntries.length && !queueActive" class="button" type="button" :disabled="!canDownload" @click="handleBatchDownload(true)">Retry {{ failedEntries.length }} failed downloads</button>
             <template v-if="video.isPlaylist">
-              <button v-if="!queueActive" class="button primary" type="button" :disabled="!canDownload || selectedCount === 0" @click="handleBatchDownload">
+              <button v-if="!queueActive" class="button primary" type="button" :disabled="!canDownload || selectedCount === 0" @click="handleBatchDownload()">
                 <span class="icon" aria-hidden="true" :style="iconStyle('download')" />
                 <span>Download {{ video.entries?.filter(e => selectedEntries[e.url]).length || 0 }} videos</span>
               </button>
@@ -1104,25 +896,12 @@ function formatHistoryTime(value: string) {
               </button>
             </template>
 
-            <template v-if="!video.isPlaylist && progress?.status !== 'finished'">
-              <button class="button" type="button" title="Extract manual or automatic subtitles from the site" :disabled="!saveDir || downloading || extractingSubtitles" @click="handleExtractSubtitles">
-                <span class="icon" aria-hidden="true" :style="iconStyle('emptyPage')" />
-                <span>{{ extractingSubtitles ? 'Extracting…' : extractedSubtitlePath ? 'Extract again' : 'Extract subtitles' }}</span>
-              </button>
-              <button v-if="extractedSubtitlePath" class="button icon-button" type="button" title="Open Markdown subtitles" aria-label="Open Markdown subtitles" @click="openPath(extractedSubtitlePath)">
-                <span class="icon" aria-hidden="true" :style="iconStyle('openNewWindow')" />
-              </button>
-            </template>
-
             <template v-if="!downloading && !queueActive && progress?.status === 'finished' && completedFilePath">
               <button class="button primary" type="button" title="Open folder" aria-label="Open folder" @click="handleOpenParentFolder">
                 <span class="icon" aria-hidden="true" :style="iconStyle('folder')" />
                 <span>Open folder</span>
               </button>
               <button class="button" type="button" @click="handleOpenFile">Open file</button>
-              <button class="button" type="button" @click="openSubtitleWorkspace(completedFilePath)">
-                <span class="icon" aria-hidden="true" :style="iconStyle('emptyPage')" />Create subtitles
-              </button>
             </template>
           </div>
         </div>
@@ -1150,6 +929,8 @@ function formatHistoryTime(value: string) {
         <pre v-if="logsOpen">{{ logs.join('\n') }}</pre>
       </div>
     </details>
+    </div>
+    <DownloadQueue ref="queueWorkspace" :import-active="downloadTab === 'multiple'" :blocked="parsing || installing || updatingYtdlp" :tools-ready="!!deps?.ytdlp_ok && !!deps?.ffmpeg_ok" />
     </div>
     <AppDialog :open="showInstallConfirm" :title="installing ? 'Installing tools…' : 'Install missing tools?'" :busy="installing" @close="showInstallConfirm = false">
         <template v-if="!installing">
@@ -1181,3 +962,22 @@ function formatHistoryTime(value: string) {
     <div v-if="dragActive" class="drop-overlay">Drop a URL here</div>
   </section>
 </template>
+
+<style scoped>
+.download-tabs { display: inline-flex; width: fit-content; max-width: 100%; gap: 4px; padding: 4px; align-items: stretch; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-hover); }
+.download-tab { min-height: 36px; min-width: 126px; padding: 7px 18px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease; }
+.download-tab:hover { background: color-mix(in srgb, var(--surface) 55%, transparent); color: var(--ink); }
+.download-tab[aria-selected=true] { background: var(--surface); color: var(--ink); border-color: var(--border); box-shadow: 0 1px 2px rgb(24 24 27 / 8%); }
+.download-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.file-options-details { margin-block: 14px; padding: 12px 0; border-block: 1px solid var(--border); }
+.file-options-details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.file-options-details[open] > summary { margin-bottom: 14px; color: var(--ink); }
+.format-details-toggle { margin: 6px 0 10px; }
+.format-help { font-size: 12px; color: var(--muted); margin-block: 6px 12px; }
+@media (prefers-reduced-motion: reduce) { .download-tab { transition: none; } }
+.download-input-panel { width: 100%; max-width: 1040px; margin: 0 auto; }
+.download-input-panel[hidden] { display: none; }
+.hero { margin-bottom: 20px; }
+.download-input-panel + :deep(.saved-queue) { margin-top: 24px; }
+@media (forced-colors: active) { .download-tab[aria-selected=true] { background: Highlight; color: HighlightText; border-color: Highlight; } }
+</style>
