@@ -1,5 +1,7 @@
 # 下载回归检查
 
+`node scripts/appearance-regression.cjs` 验证浅色、深色和跟随系统、手动选择优先级、重启持久化、多窗口同步、存储不可用与监听清理。外观偏好使用独立存储键，不修改下载偏好或任务数据。
+
 `node scripts/download-options-regression.cjs` 覆盖文件与音轨选项持久化、覆盖前确认与拒绝确认、跳过已有文件终态、同分辨率不同编码/帧率及错误分类。`cargo test --manifest-path src-tauri/Cargo.toml --lib real_file_policies_and_mp3_conversion -- --include-ignored` 使用 `YDLITE_TEST_MEDIA_URL` 指定本机可播放测试媒体，验证实际跳过、编号、覆盖、MP3 转换及格式失效。公开站点回归 `real_public_download_and_playback` 单独运行，需提供 `YDLITE_TEST_PUBLIC_URL`，会真实下载 best/720p/MP3；不默认访问外部站点。
 
 `node scripts/download-queue-regression.cjs` 运行真实页面的 TypeScript 逻辑并模拟 IPC，覆盖终态早于返回、失败后继续、启动失败、取消、失败项单独重试、格式映射、历史归属和日志批量更新。

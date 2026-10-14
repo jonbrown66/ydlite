@@ -1,21 +1,26 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import brandMark from '@/assets/brand-mark.svg'
 import clockIcon from 'iconoir/icons/clock.svg?url'
 import downloadIcon from 'iconoir/icons/download.svg?url'
 import settingsIcon from 'iconoir/icons/settings.svg?url'
 import navArrowLeftIcon from 'iconoir/icons/nav-arrow-left.svg?url'
+import sunIcon from 'iconoir/icons/sun-light.svg?url'
+import moonIcon from 'iconoir/icons/half-moon.svg?url'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import { canCloseWindow } from '@/lib/closeGuards'
 import { Button } from '@/components/ui/button'
 import SidebarProgress from '@/components/SidebarProgress.vue'
 import { useActivityStore } from '@/stores/activity'
 import { useDownloadQueueStore } from '@/stores/downloadQueue'
+import { useAppearanceStore } from '@/stores/appearance'
 
 const appWindow = getCurrentWindow()
 const activity = useActivityStore()
 const downloadQueue = useDownloadQueueStore()
+const appearance = useAppearanceStore()
+const themeAction = computed(() => appearance.resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode')
 const maximized = ref(false)
 const sidebarCollapsed = ref(localStorage.getItem('ydlite.sidebarCollapsed') === '1')
 const showCloseConfirm = ref(false)
@@ -147,6 +152,10 @@ onBeforeUnmount(() => {
         </div>
         <div class="sidebar-footer">
           <SidebarProgress />
+          <button class="sidebar-link appearance-toggle" type="button" :aria-label="themeAction" :title="themeAction" @click="appearance.toggle()">
+            <i class="icon" aria-hidden="true" :style="iconStyle(appearance.resolved === 'dark' ? moonIcon : sunIcon)" />
+            <span>{{ appearance.resolved === 'dark' ? 'Dark appearance' : 'Light appearance' }}</span>
+          </button>
           <RouterLink :to="{ name: 'settings' }" class="sidebar-link settings-link" title="Settings" aria-label="Settings">
             <i class="icon" :style="iconStyle(settingsIcon)" />
             <span>Settings</span>
@@ -169,6 +178,7 @@ onBeforeUnmount(() => {
       </section>
     </div>
     <p v-if="closeError" class="window-error" role="alert">{{ closeError }}</p>
+    <p v-if="appearance.error" class="window-error" role="alert">{{ appearance.error }}</p>
     <AppDialog :open="showCloseConfirm" title="Tasks are still running" @close="settleClose(false)">
       <p>Closing will interrupt the current task. The download queue is saved; you can continue it after reopening the app.</p>
       <div class="modal-actions">

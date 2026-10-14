@@ -10,10 +10,13 @@ import { registerCloseGuard } from '@/lib/closeGuards'
 import { checkDependencies, checkYtdlpUpdate, getToolsDirectory, installMissingTools, onToolInstallProgress, openPath, selectCookiesFile, selectDirectory, updateYtdlp } from '@/api/tauri'
 import { usePreferencesStore, type DownloadPreferences } from '@/stores/preferences'
 import { useActivityStore } from '@/stores/activity'
+import { useAppearanceStore, type Appearance } from '@/stores/appearance'
 import type { DependencyStatus, ToolInstallEvent } from '@/types'
 
 const preferences = usePreferencesStore()
 const activity = useActivityStore()
+const appearance = useAppearanceStore()
+const appearances: Array<{ value: Appearance; label: string }> = [{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]
 const downloadRunning = computed(() => activity.visibleTasks.some(task => task.kind === 'download' && ['active', 'cancelling'].includes(task.state)))
 const cloneSettings = () => ({ ...preferences.settings, fileOptions: { ...preferences.settings.fileOptions } })
 const draft = ref<DownloadPreferences>(cloneSettings())
@@ -79,6 +82,14 @@ onBeforeRouteLeave(requestUnsavedConfirm)
     <PageHeader title="Settings" />
     <div class="settings-sheet">
       <section>
+        <h2>Appearance</h2>
+        <p class="section-description">Choose a light or dark workspace, or follow your system. Changes apply and save immediately.</p>
+        <div class="appearance-options segmented-control" role="group" aria-label="Appearance">
+          <Button v-for="option in appearances" :key="option.value" class="segmented-option" variant="ghost" :aria-pressed="appearance.preference === option.value" @click="appearance.choose(option.value)">{{ option.label }}</Button>
+        </div>
+        <p class="appearance-note" role="status">{{ appearance.preference === 'system' ? `Following system · ${appearance.resolved} mode` : `${appearance.preference === 'dark' ? 'Dark' : 'Light'} mode` }}</p>
+      </section>
+      <section>
         <h2>Download defaults</h2>
         <p class="section-description">Choose a starting format and folder. You can change them for each download.</p>
         <div class="settings-fields">
@@ -124,7 +135,8 @@ h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
 .settings-fields { display: grid; gap: 18px; }
 .settings-fields > label { display: grid; gap: 6px; }
 .settings-input-group { display: flex; gap: 8px; align-items: center; min-width: 0; flex-wrap: wrap; }
-.settings-input-group input { flex: 1 1 220px; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--ink); }
+.settings-input-group input { flex: 1 1 220px; min-inline-size: 0; block-size: var(--control-height); padding-block: 0; padding-inline: var(--control-padding-inline); border: 0; border-radius: var(--radius-control); background: var(--surface); color: var(--ink); box-shadow: var(--control-shadow); }
+.settings-input-group input:focus-visible { box-shadow: none; }
 .settings-fields > .settings-toggle { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
 .settings-toggle input { margin-top: 3px; }
 .tool-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 12px; border-top: 1px solid var(--border); }
@@ -135,6 +147,7 @@ h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
 .settings-actions { flex-shrink: 0; display: flex; align-items: center; gap: 16px; width: 100%; max-width: 1040px; margin: 16px auto 0; padding: 12px 16px; border-radius: var(--radius-panel); background: var(--surface); box-shadow: var(--control-shadow); }
 .settings-actions > button { margin-left: auto; }
 .save-state { color: var(--muted); }
+.appearance-note { margin: 12px 0 0; color: var(--muted); }
 .inline-alert { flex-shrink: 0; margin-bottom: 0; }
 @container workspace (max-width: 620px) { .settings-sheet > section { padding: 18px 16px; } }
 </style>

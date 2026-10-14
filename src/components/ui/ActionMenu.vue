@@ -18,6 +18,8 @@ async function show(event: Event) {
   style.value = { left: `${Math.max(8, Math.min(box.right - 184, innerWidth - 192))}px`, top: `${box.bottom + height + 8 <= innerHeight ? box.bottom + 6 : Math.max(8, box.top - height - 6)}px` }
   open.value = true
   await nextTick()
+  const actualHeight = panel.value?.getBoundingClientRect().height ?? height
+  style.value.top = `${box.bottom + actualHeight + 8 <= innerHeight ? box.bottom + 6 : Math.max(8, box.top - actualHeight - 6)}px`
   panel.value?.querySelector<HTMLButtonElement>('button')?.focus()
   document.addEventListener('pointerdown', outside, true)
   window.addEventListener('resize', close)
@@ -60,12 +62,14 @@ onBeforeUnmount(close)
 </template>
 
 <style scoped>
-.action-menu { position: fixed; z-index: 500; width: 184px; padding: 4px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--border), var(--shadow-float); }
-.action-menu button { display: block; width: 100%; min-height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font-size: 14px; text-align: left; }
-.action-menu button:hover, .action-menu button:focus { background: var(--surface-hover); }
-.action-menu button:focus-visible { outline-offset: -2px; }
+.action-menu { position: fixed; z-index: 500; display: grid; gap: var(--control-item-gap); inline-size: 184px; max-inline-size: calc(100vw - 16px); padding: var(--control-inset); border-radius: var(--control-group-radius); background: var(--surface); box-shadow: 0 0 0 1px var(--border), var(--shadow-float); }
+.action-menu button { display: block; inline-size: 100%; min-block-size: var(--control-height); padding-block: 4px; padding-inline: var(--control-padding-inline); border: 0; border-radius: var(--radius-option); background: transparent; color: var(--ink); font-size: 14px; line-height: 20px; text-align: start; }
+.action-menu button:focus { background: var(--surface-hover); }
+.action-menu button:focus-visible { outline-offset: calc(-1 * var(--focus-width)); }
+.action-menu button:active { background: var(--primary-soft); }
 .action-menu button.danger { color: var(--danger); }
-.action-menu button.danger:hover, .action-menu button.danger:focus { background: var(--danger-soft); }
+.action-menu button.danger:focus, .action-menu button.danger:active { background: var(--danger-soft); }
+@media (hover: hover) and (pointer: fine) { .action-menu button:hover { background: var(--surface-hover); } .action-menu button.danger:hover { background: var(--danger-soft); } }
 .menu-enter-active, .menu-leave-active { transition: opacity 100ms ease-out, transform 120ms var(--ease-out); }
 .menu-enter-from, .menu-leave-to { opacity: 0; transform: translateY(-4px); }
 @media (prefers-reduced-motion: reduce) { .menu-enter-active, .menu-leave-active { transition: none; } }

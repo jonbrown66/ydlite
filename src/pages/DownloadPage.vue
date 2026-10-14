@@ -669,9 +669,9 @@ function friendlyErrorMessage(message: string, detail: string) {
     <div class="content-scroll">
     <section class="hero">
       <PageHeader title="Downloads" />
-      <div class="download-tabs" role="tablist" aria-label="Download input mode">
+      <div class="download-tabs segmented-control" role="tablist" aria-label="Download input mode">
         <button v-for="(tab, index) in downloadTabs" :id="`downloads-tab-${tab.value}`" :key="tab.value"
-          class="download-tab" type="button" role="tab" :aria-selected="downloadTab === tab.value"
+          class="download-tab segmented-option" type="button" role="tab" :aria-selected="downloadTab === tab.value"
           :aria-controls="`downloads-panel-${tab.value}`" :tabindex="downloadTab === tab.value ? 0 : -1"
           @click="downloadTab = tab.value" @keydown="onDownloadTabKeydown($event, index)">
           {{ tab.label }}
@@ -792,7 +792,6 @@ function friendlyErrorMessage(message: string, detail: string) {
             <span class="label">{{ video.isPlaylist ? 'Playlist' : 'Video' }}<template v-if="video.extractor"> · {{ video.extractor }}</template></span>
             <h2>{{ video.title }}</h2>
             <p v-if="video.uploader || video.duration">{{ video.uploader || 'Unknown author' }} · {{ durationText }}</p>
-            <details class="video-diagnostics"><summary>Details</summary><p class="parse-note">{{ video.parseStrategy }} · {{ video.site }}</p></details>
           </div>
         </div>
 
@@ -833,15 +832,6 @@ function friendlyErrorMessage(message: string, detail: string) {
             />
           </div>
 
-          <button v-if="video.formats?.length && !video.isPlaylist" class="link-button compact format-details-toggle" type="button" :disabled="downloading" :aria-expanded="showDetailedFormats" @click="showDetailedFormats = !showDetailedFormats">{{ showDetailedFormats ? 'Use simple format choices' : 'Choose a specific format' }}</button>
-          <div v-if="audioOptions.length > 1 && !video.isPlaylist" class="format-select-row">
-            <span>Audio track</span>
-            <AppSelect v-model="selectedAudioId" :options="audioOptions" :disabled="downloading || (!!selectedFormat && selectedFormat.acodec !== 'none')" aria-label="Audio track" />
-          </div>
-          <p v-if="selectedFormat && selectedFormat.acodec !== 'none'" class="format-help">This format includes audio. Choose a video-only format to select a separate audio track.</p>
-          <p v-if="selectedFormat" class="format-help">The selected format is required. If it becomes unavailable, reanalyze or choose another format.</p>
-          <details class="file-options-details"><summary>Files and format preference</summary><DownloadOptionsFields v-model="fileOptions" :disabled="downloading || queueActive" /></details>
-
           <div class="format-select-row save-location-row">
             <span>Save to</span>
           <div class="path-row">
@@ -856,7 +846,20 @@ function friendlyErrorMessage(message: string, detail: string) {
             <span>Use as default folder</span>
           </label>
 
-          <p v-if="!progress && !video.isPlaylist" class="download-size-preview">Estimated download size <strong>{{ downloadSizeText }}</strong></p>
+          <details class="file-options-details">
+            <summary>More options <span class="options-summary-hint">Formats, audio and files</span></summary>
+            <div class="download-options-content">
+              <button v-if="video.formats?.length && !video.isPlaylist" class="link-button compact format-details-toggle" type="button" :disabled="downloading || queueActive" :aria-expanded="showDetailedFormats" @click="showDetailedFormats = !showDetailedFormats">{{ showDetailedFormats ? 'Use simple format choices' : 'Choose a specific format' }}</button>
+              <div v-if="audioOptions.length > 1 && !video.isPlaylist" class="format-select-row">
+                <span>Audio track</span>
+                <AppSelect v-model="selectedAudioId" :options="audioOptions" :disabled="downloading || queueActive || (!!selectedFormat && selectedFormat.acodec !== 'none')" aria-label="Audio track" />
+              </div>
+              <p v-if="selectedFormat && selectedFormat.acodec !== 'none'" class="format-help">This format includes audio. Choose a video-only format to select a separate audio track.</p>
+              <p v-if="selectedFormat" class="format-help">The selected format is required. If it becomes unavailable, reanalyze or choose another format.</p>
+              <DownloadOptionsFields v-model="fileOptions" :disabled="downloading || queueActive" />
+              <details v-if="video.parseStrategy || video.site" class="video-diagnostics"><summary>Source details</summary><p class="parse-note">{{ [video.parseStrategy, video.site].filter(Boolean).join(' · ') }}</p></details>
+            </div>
+          </details>
           <div v-if="progress" class="progress-panel" :class="{ 'is-finished': progress.status === 'finished' }" aria-live="polite">
             <div class="progress-head">
               <span class="progress-status"><i v-if="progressIndeterminate" class="progress-spinner" aria-hidden="true" />{{ progressStatusText }}</span>
@@ -903,6 +906,7 @@ function friendlyErrorMessage(message: string, detail: string) {
               </button>
               <button class="button" type="button" @click="handleOpenFile">Open file</button>
             </template>
+            <p v-if="!progress && !video.isPlaylist" class="download-size-preview">Estimated size <strong>{{ downloadSizeText }}</strong></p>
           </div>
         </div>
       </section>
@@ -964,20 +968,20 @@ function friendlyErrorMessage(message: string, detail: string) {
 </template>
 
 <style scoped>
-.download-tabs { display: inline-flex; width: fit-content; max-width: 100%; gap: 4px; padding: 4px; align-items: stretch; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-hover); }
-.download-tab { min-height: 36px; min-width: 126px; padding: 7px 18px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease; }
-.download-tab:hover { background: color-mix(in srgb, var(--surface) 55%, transparent); color: var(--ink); }
-.download-tab[aria-selected=true] { background: var(--surface); color: var(--ink); border-color: var(--border); box-shadow: 0 1px 2px rgb(24 24 27 / 8%); }
-.download-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-.file-options-details { margin-block: 14px; padding: 12px 0; border-block: 1px solid var(--border); }
-.file-options-details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
-.file-options-details[open] > summary { margin-bottom: 14px; color: var(--ink); }
-.format-details-toggle { margin: 6px 0 10px; }
-.format-help { font-size: 12px; color: var(--muted); margin-block: 6px 12px; }
-@media (prefers-reduced-motion: reduce) { .download-tab { transition: none; } }
+.download-tab { min-inline-size: 126px; }
+.file-options-details { margin-block-start: 20px; }
+.file-options-details > summary { cursor: pointer; color: var(--muted); font-size: 14px; line-height: 20px; min-block-size: var(--control-height-compact); padding-block: 6px; }
+.file-options-details > summary:active { color: var(--ink); }
+.file-options-details[open] > summary { color: var(--ink); }
+.options-summary-hint { color: var(--subtle); margin-inline-start: 8px; }
+.file-options-details[open] .options-summary-hint { display: none; }
+.download-options-content { display: grid; gap: 14px; padding-block: 14px 4px; }
+.download-options-content > .format-select-row { margin-block: 0; }
+.format-details-toggle { justify-self: start; }
+.format-help { font-size: 14px; color: var(--muted); margin-block: 0; }
+@media (hover: hover) and (pointer: fine) { .file-options-details > summary:hover { color: var(--ink); } }
 .download-input-panel { width: 100%; max-width: 1040px; margin: 0 auto; }
 .download-input-panel[hidden] { display: none; }
 .hero { margin-bottom: 20px; }
 .download-input-panel + :deep(.saved-queue) { margin-top: 24px; }
-@media (forced-colors: active) { .download-tab[aria-selected=true] { background: Highlight; color: HighlightText; border-color: Highlight; } }
 </style>

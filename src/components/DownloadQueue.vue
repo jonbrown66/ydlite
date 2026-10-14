@@ -161,7 +161,8 @@ defineExpose({ appendLinks })
 .batch-input-panel[hidden] { display: none; }
 .batch-import { display: grid; gap: 10px; padding: 0 1px 12px; }
 .batch-import label { font-size: 13px; font-weight: 600; }
-.batch-import textarea { width: 100%; min-height: 110px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-control); font: inherit; font-size: 13px; line-height: 1.6; color: var(--ink); background: var(--surface); }
+.batch-import textarea { inline-size: 100%; min-block-size: 110px; resize: vertical; padding-block: 10px; padding-inline: var(--control-padding-inline); border: 0; border-radius: var(--radius-control); box-shadow: var(--control-shadow); font: inherit; font-size: 14px; line-height: 1.6; color: var(--ink); background: var(--surface); }
+.batch-import textarea:focus-visible { box-shadow: none; }
 .batch-import p, .saved-queue-heading p, .queue-feedback, .queue-recovery-note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
 .batch-options { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .batch-folder { display: flex; gap: 10px; align-items: center; flex: 1; min-width: 180px; }
@@ -185,9 +186,14 @@ defineExpose({ appendLinks })
 .queue-options-summary { color: var(--subtle); font-size: 11px; margin: 0; overflow-wrap: anywhere; }
 .queue-item-error { color: var(--danger); font-size: 12px; line-height: 1.6; margin: 7px 0 0; }
 .queue-item-actions { display: flex; align-items: center; gap: 8px; }
-.queue-item-menu summary { cursor: pointer; font-size: 12px; padding: 6px; color: var(--muted); }
-.queue-item-menu > div { display: grid; gap: 4px; max-width: 160px; }
-.queue-item-menu button { border: 0; padding: 6px; background: var(--surface-subtle); color: var(--ink); font-size: 12px; text-align: left; border-radius: 4px; cursor: pointer; }.queue-item-menu button:disabled { opacity: .45; cursor: default; }.queue-item-menu button:hover:not(:disabled) { background: var(--surface-hover); }
+.queue-item-menu summary { cursor: pointer; min-block-size: var(--control-height-compact); padding-block: 6px; padding-inline: 8px; border-radius: var(--radius-control); font-size: 14px; line-height: 20px; color: var(--muted); }
+.queue-item-menu summary:active { background: var(--surface-hover); color: var(--ink); }
+.queue-item-menu > div { display: grid; gap: var(--control-item-gap); max-inline-size: 160px; padding: var(--control-inset); border-radius: var(--control-group-radius); background: var(--surface); box-shadow: 0 0 0 1px var(--border); }
+.queue-item-menu button { min-block-size: var(--control-height); border: 0; padding-block: 4px; padding-inline: var(--control-padding-inline); background: transparent; color: var(--ink); font-size: 14px; line-height: 20px; text-align: start; border-radius: var(--radius-option); cursor: pointer; }
+.queue-item-menu button:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
+.queue-item-menu button:focus-visible { outline-offset: calc(-1 * var(--focus-width)); }
+.queue-item-menu button:active:not(:disabled) { background: var(--primary-soft); }
+@media (hover: hover) and (pointer: fine) { .queue-item-menu button:hover:not(:disabled), .queue-item-menu summary:hover { background: var(--surface-hover); } }
 .queue-item-progress { height: 3px; background: var(--border); margin-top: 9px; border-radius: 2px; overflow: hidden; }.queue-item-progress span { display: block; height: 100%; background: var(--primary); transform-origin: left; }
 .queue-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; width: 100%; padding-top: 10px; }
 .queue-feedback, .queue-recovery-note { padding-top: 8px; }.queue-storage-error { padding: 12px; margin-top: 10px; background: var(--danger-soft); border-radius: var(--radius-control); color: var(--danger); font-size: 13px; }

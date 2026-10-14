@@ -25,6 +25,6 @@
   --app-muted-foreground: var(--muted);
   --app-border: var(--border);
   --app-primary: var(--primary);
-  --app-primary-foreground: var(--surface);
+  --app-primary-foreground: var(--primary-foreground);
   --app-danger: var(--danger);
 }

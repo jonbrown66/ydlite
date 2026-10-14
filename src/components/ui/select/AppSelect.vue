@@ -204,13 +204,15 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  height: 36px;
-  padding: 0 10px 0 12px;
+  block-size: var(--control-height);
+  padding-block: 0;
+  padding-inline: var(--control-padding-inline);
   border: 0;
   border-radius: var(--radius-control);
   background: var(--workspace-surface);
   color: var(--workspace-ink);
   font-size: 14px;
+  line-height: 20px;
   font-weight: 400;
   text-align: left;
   cursor: pointer;
@@ -218,9 +220,8 @@ onBeforeUnmount(() => {
   box-shadow: var(--control-shadow);
 }
 
-.app-select-trigger:hover:not(:disabled) {
-  background: var(--workspace-surface-muted);
-  box-shadow: 0 0 0 1px var(--border-strong), 0 1px 2px rgb(24 24 27 / 5%);
+@media (hover: hover) and (pointer: fine) {
+  .app-select-trigger:hover:not(:disabled) { background: var(--surface-hover); }
 }
 
 .app-select.open .app-select-trigger {
@@ -232,7 +233,7 @@ onBeforeUnmount(() => {
 .app-select-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .app-select-trigger:disabled {
-  opacity: 0.48;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 
@@ -240,8 +241,8 @@ onBeforeUnmount(() => {
 .select-check {
   display: block;
   flex: 0 0 auto;
-  width: 15px;
-  height: 15px;
+  inline-size: 16px;
+  block-size: 16px;
   background: currentColor;
   mask: var(--select-icon) center / contain no-repeat;
   -webkit-mask: var(--select-icon) center / contain no-repeat;
@@ -260,8 +261,8 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 500;
   display: grid;
-  gap: 2px;
-  padding: 6px;
+  gap: var(--control-item-gap);
+  padding: var(--control-inset);
   max-height: min(248px, calc(100vh - 96px));
   overflow-x: hidden;
   overflow-y: auto;
@@ -269,7 +270,7 @@ onBeforeUnmount(() => {
   scrollbar-color: var(--workspace-border-strong) transparent;
   scrollbar-width: thin;
   border: 0;
-  border-radius: var(--radius-panel);
+  border-radius: var(--control-group-radius);
   background: var(--workspace-surface);
   box-shadow: 0 0 0 1px var(--workspace-border), var(--workspace-shadow);
 }
@@ -291,13 +292,15 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  min-height: 36px;
-  padding: 0 9px;
+  min-block-size: var(--control-height);
+  padding-block: 4px;
+  padding-inline: var(--control-padding-inline);
   border: 0;
   border-radius: var(--radius-option);
   background: transparent;
   color: var(--workspace-ink);
   font-size: 14px;
+  line-height: 20px;
   text-align: left;
   cursor: pointer;
 }
@@ -311,6 +314,8 @@ onBeforeUnmount(() => {
   color: var(--workspace-ink);
   font-weight: 500;
 }
+.app-select-option:focus-visible { outline-offset: calc(-1 * var(--focus-width)); }
+.app-select-option:active { background: var(--primary-soft); }
 
 .select-check {
   color: var(--workspace-accent);

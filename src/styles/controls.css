@@ -1,25 +1,40 @@
 /* Controls share the same dimensions as the Vue Button primitive. */
-.button, .tip-btn { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--radius-control); background: var(--surface); color: var(--ink); font-size: 14px; font-weight: 500; box-shadow: var(--control-shadow); }
+.button, .tip-btn { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-block-size: var(--control-height); padding-block: 0; padding-inline: var(--control-padding-inline); border: 0; border-radius: var(--radius-control); background: var(--surface); color: var(--ink); font-size: 14px; line-height: 20px; font-weight: 500; box-shadow: var(--control-shadow); }
 .ui-button { border: 0; font-size: 14px; line-height: 20px; user-select: none; background: var(--surface); color: var(--ink); box-shadow: var(--control-shadow); }
-.button:hover:not(:disabled), .tip-btn:hover:not(:disabled), .ui-button-secondary:hover:not(:disabled), .ui-button-outline:hover:not(:disabled) { background: var(--surface-hover); }
-.button.primary, .tip-btn.primary, .ui-button-primary { color: white; background: var(--primary-fill); box-shadow: var(--primary-shadow); }
-.button.primary:hover:not(:disabled), .tip-btn.primary:hover:not(:disabled), .ui-button-primary:hover:not(:disabled) { background: var(--primary-fill-hover); }
+.button.primary, .tip-btn.primary, .ui-button-primary { color: var(--primary-foreground); background: var(--primary-fill); box-shadow: var(--primary-shadow); }
 .button.primary:active:not(:disabled), .tip-btn.primary:active:not(:disabled), .ui-button-primary:active:not(:disabled) { background: var(--primary-hover); box-shadow: 0 0 0 1px var(--primary-hover), inset 0 1px 2px rgb(24 24 27 / 16%); }
 .ui-button-ghost { background: transparent; color: var(--muted); box-shadow: none; }
-.ui-button-ghost:hover:not(:disabled), .ui-button-ghost[aria-expanded=true] { background: var(--surface-hover); color: var(--ink); }
-.ui-button-danger { background: var(--danger); color: white; box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 85%, black), inset 0 1px 0 rgb(255 255 255 / 15%), 0 1px 2px rgb(24 24 27 / 5%); }
-.ui-button-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 90%, black); }
-.ui-button:focus-visible { box-shadow: none; }
+.ui-button-ghost[aria-expanded=true] { background: var(--surface-hover); color: var(--ink); }
+.ui-button-danger { background: var(--danger); color: var(--danger-foreground); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 85%, black), inset 0 1px 0 rgb(255 255 255 / 15%), 0 1px 2px rgb(24 24 27 / 5%); }
+.button:focus-visible, .tip-btn:focus-visible, .ui-button:focus-visible { box-shadow: none; }
 .button.danger { color: var(--danger); background: var(--danger-soft); }
-.button:disabled, .link-button:disabled, .tip-btn:disabled { opacity: 0.45; }
-.button, .ui-button { text-decoration: none; transition: transform 100ms var(--ease-out); }
+.button:disabled, .link-button:disabled, .tip-btn:disabled { opacity: var(--disabled-opacity); }
+.button, .ui-button { text-decoration: none; }
+.button:active:not(:disabled), .tip-btn:active:not(:disabled), .ui-button-secondary:active:not(:disabled), .ui-button-outline:active:not(:disabled), .ui-button-ghost:active:not(:disabled) { background: var(--surface-hover); }
+.ui-button-danger:active:not(:disabled) { background: color-mix(in oklch, var(--danger) 85%, black); }
 .button:active:not(:disabled), .ui-button:active:not(:disabled) { transform: translateY(1px); }
-.button.icon-button, .button.icon-only { width: 36px; padding: 0; }
+.button.icon-button, .button.icon-only { inline-size: var(--control-height); padding: 0; }
 .link-button { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--primary); font-size: 14px; font-weight: 400; box-shadow: none; }
-.link-button:hover:not(:disabled) { color: var(--primary-hover); text-decoration: underline; }
-.link-button.compact { min-height: 28px; padding: 0 6px; }
+.link-button:active:not(:disabled) { color: var(--primary-hover); }
+.link-button.compact { min-block-size: var(--control-height-compact); padding-block: 0; padding-inline: 6px; }
 
 
-:where(button, input, select, textarea, summary, a):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-@media (forced-colors: active) { :where(button, input, select, textarea, summary, a):focus-visible { outline-color: Highlight; } .button, .ui-button { border: 1px solid ButtonText; } }
+:where(button, input, select, textarea, summary, a):focus-visible { outline: var(--focus-width) solid var(--primary); outline-offset: var(--focus-offset); }
+/* A single inset and radius contract for tabs and exclusive choice groups. */
+.segmented-control, .task-filters { display: inline-flex; inline-size: fit-content; max-inline-size: 100%; align-items: stretch; gap: var(--control-item-gap); padding: var(--control-inset); border: 0; border-radius: var(--control-group-radius); background: var(--surface-hover); box-shadow: 0 0 0 1px var(--border); }
+.segmented-control > .segmented-option, .task-filters > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-block-size: var(--control-height-compact); block-size: var(--control-height-compact); padding-block: 0; padding-inline: var(--control-padding-inline); border: 0; border-radius: var(--radius-control); background: transparent; color: var(--muted); font: inherit; font-size: 14px; line-height: 20px; font-weight: 500; box-shadow: none; transition: none; }
+.segmented-control > .segmented-option:is([aria-selected=true], [aria-pressed=true]), .task-filters > button[aria-pressed=true] { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--border); }
+.segmented-control > .segmented-option:focus-visible, .task-filters > button:focus-visible { outline-offset: calc(-1 * var(--focus-width)); box-shadow: none; }
+.segmented-control > .segmented-option:active:not(:disabled), .task-filters > button:active:not(:disabled) { transform: none; background: var(--surface-subtle); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) {
+  .button:hover:not(:disabled), .tip-btn:hover:not(:disabled), .ui-button-secondary:hover:not(:disabled), .ui-button-outline:hover:not(:disabled), .ui-button-ghost:hover:not(:disabled) { background: var(--surface-hover); }
+  .ui-button-ghost:hover:not(:disabled) { color: var(--ink); }
+  .button.primary:hover:not(:disabled), .tip-btn.primary:hover:not(:disabled), .ui-button-primary:hover:not(:disabled) { background: var(--primary-fill-hover); }
+  .ui-button-danger:hover:not(:disabled) { background: color-mix(in oklch, var(--danger) 90%, black); }
+  .link-button:hover:not(:disabled) { color: var(--primary-hover); text-decoration: underline; }
+  .segmented-control > .segmented-option:not([aria-selected=true], [aria-pressed=true]):hover:not(:disabled), .task-filters > button:not([aria-pressed=true]):hover:not(:disabled) { background: color-mix(in oklch, var(--surface) 55%, transparent); color: var(--ink); }
+  .segmented-control > .segmented-option:is([aria-selected=true], [aria-pressed=true]):hover { background: var(--surface); color: var(--ink); }
+}
+@media (prefers-reduced-motion: no-preference) { .button, .ui-button { transition: transform 100ms var(--ease-out); } }
+@media (forced-colors: active) { :where(button, input, select, textarea, summary, a):focus-visible { outline-color: Highlight; } .button, .ui-button { border: 1px solid ButtonText; } .segmented-control, .task-filters { outline: 1px solid ButtonText; } .segmented-control > .segmented-option:is([aria-selected=true], [aria-pressed=true]), .task-filters > button[aria-pressed=true] { background: Highlight; color: HighlightText; } }
 @media (prefers-reduced-motion: reduce) { .button, .ui-button { transition: none; } }

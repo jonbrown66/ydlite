@@ -15,7 +15,7 @@ export const buttonVariants = cva(
         danger: 'ui-button-danger',
       },
       size: {
-        default: 'h-9 px-3.5',
+        default: 'h-9 px-3',
         sm: 'h-8 px-3',
         icon: 'size-9 p-0',
       },

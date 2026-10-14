@@ -44,7 +44,7 @@ onActivated(() => tasks.refresh())
 
 <style scoped>
 .section-tools { display: flex; align-items: center; gap: 4px; }
-.section-tools :deep(button) { height: 28px; padding-inline: 9px; }
+.section-tools :deep(button) { block-size: var(--control-height-compact); padding-inline: var(--control-padding-inline); }
 .task-actions .confirm-button { width: auto; min-width: 46px; padding-inline: 9px; }
 .task-toolbar > span { color: var(--muted); }
 .task-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

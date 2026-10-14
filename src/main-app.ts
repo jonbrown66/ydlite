@@ -2,13 +2,19 @@ import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
+import { useAppearanceStore } from './stores/appearance'
 import './styles/tailwind.css'
 import './styles.css'
 
 document.documentElement.lang = 'en'
 
+const pinia = createPinia()
+const appearance = useAppearanceStore(pinia)
+appearance.initialize()
+if (import.meta.hot) import.meta.hot.dispose(() => appearance.stop())
+
 const app = createApp(App)
-  .use(createPinia())
+  .use(pinia)
   .use(router)
 
 app.mount('#app')
