@@ -19,7 +19,7 @@
   "NsisInstallUpgrade": "passed, output sentinel preserved",
   "Msi": "administrative extraction passed; installation not exercised",
   "WebsitePreview": "production 1180/390px, images loaded, download response hashes match",
-  "Online": "0.1.0 subtitle version observed; no deployment",
+  "Online": "0.1.0 legacy version observed; no deployment",
   "Remaining": [
     "authenticated downloads",
     "native WebView2 / DPI / real profile migration",

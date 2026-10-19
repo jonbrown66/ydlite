@@ -140,7 +140,6 @@ pub(crate) fn remember(url: &str, options: &ParseOptions, value: &Value) {
         for key in [
             "requested_downloads",
             "requested_formats",
-            "requested_subtitles",
             "filepath",
             "_filename",
             "filename",

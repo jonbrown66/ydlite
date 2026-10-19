@@ -3,7 +3,7 @@ dist/
 .wrangler/
 src-tauri/target/
 src-tauri/target-package/
-src-tauri/target-subtitle-fix/
+
 tmp-test/
 *.stackdump
 *.log

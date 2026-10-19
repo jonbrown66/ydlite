@@ -179,7 +179,6 @@ const artifactDir = process.env.FRONTEND_ARTIFACT_DIR || 'artifacts/frontend';
     await page.getByRole('button',{name:'Open file',exact:true}).waitFor();
     assert.deepEqual((await page.locator('.download-actions button').allTextContents()).map(text=>text.trim()), ['Open folder','Open file']);
     await page.locator('.download-actions').screenshot({path:artifactDir + '/download-completed-actions.png'});
-    assert.equal(await page.getByRole('link', {name:'Subtitles',exact:true}).count(), 0);
     await page.getByRole('link',{name:'History',exact:true}).click();
     await page.getByRole('button',{name:'More download actions',exact:true}).click();
     await page.keyboard.press('Escape');

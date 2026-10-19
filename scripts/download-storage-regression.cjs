@@ -35,14 +35,14 @@ for (const corrupt of ['bad json','null','{}','[null,{"id":"bad"}]']) {
   assert.equal(load('src/stores/tasks.ts',{'ydlite.history':corrupt}).module.readDownloadHistory().length,0);
 }
 {
-  const {module,data} = load('src/stores/preferences.ts', {'ydlite.defaultDir':'C:/existing','ydlite.cookiesFilePath':'C:/cookies.txt','legacy.subtitle.project':'preserve'});
+  const {module,data} = load('src/stores/preferences.ts', {'ydlite.defaultDir':'C:/existing','ydlite.cookiesFilePath':'C:/cookies.txt','legacy.preferences.backup':'preserve'});
   const store = module.usePreferencesStore();
   assert.equal(store.settings.value.defaultDir,'C:/existing');
   assert.equal(store.settings.value.cookiesFilePath,'C:/cookies.txt');
   store.update({defaultQuality:'mp3',defaultDir:' C:/new '});
   assert.equal(store.settings.value.defaultDir,'C:/new');
   assert.equal(JSON.parse(data.get('ydlite.downloadPreferences')).defaultQuality,'mp3');
-  assert.equal(data.get('legacy.subtitle.project'),'preserve');
+  assert.equal(data.get('legacy.preferences.backup'),'preserve');
   assert.equal(load('src/stores/preferences.ts',Object.fromEntries(data)).module.usePreferencesStore().settings.value.defaultQuality,'mp3');
 }
 console.log('PASS: history capacity, validation, deduplication, deletion and persistence; legacy download preferences and retained legacy data.');

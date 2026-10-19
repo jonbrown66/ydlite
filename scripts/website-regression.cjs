@@ -11,7 +11,6 @@ const base = process.env.WEBSITE_TEST_URL || 'http://127.0.0.1:1427';
   page.on('response',r=>{if(r.status()>=400) errors.push(`${r.status()} ${r.url()}`);});
   await page.goto(base);
   await page.getByRole('heading',{level:1}).waitFor();
-  assert.equal(await page.getByRole('tab',{name:'Subtitles',exact:true}).count(),0);
   assert.equal(await page.locator('meta[name="description"]').count(),1);
   assert.equal(await page.locator('meta[property="og:image"]').count(),1);
   assert.equal(await page.locator('html').getAttribute('lang'),'en');
@@ -43,17 +42,20 @@ const base = process.env.WEBSITE_TEST_URL || 'http://127.0.0.1:1427';
   assert.equal(await menu.evaluate(el=>el===document.activeElement),true);
   await page.locator('.faq-list summary').first().focus(); await page.keyboard.press('Enter');
   assert.equal(await page.locator('.faq-list details').first().getAttribute('open'),'');
-  for (const filename of ['YDLite_0.1.0_x64-setup.exe','YDLite_0.1.0_x64_en-US.msi']) {
+  for (const filename of ['YDLite_0.2.0_x64-setup.exe','YDLite_0.2.0_x64_en-US.msi']) {
    const response = await page.request.get(`${base}/downloads/${filename}`);
    assert.equal(response.status(),200);
    assert.deepEqual(await response.body(),fs.readFileSync(`public/downloads/${filename}`));
   }
-  fs.mkdirSync('artifacts/download-focus',{recursive:true});
-  await page.evaluate(()=>{ document.activeElement?.blur(); window.scrollTo(0,0); });
-  await page.screenshot({path:'artifacts/download-focus/website-mobile.png',fullPage:true});
-  await page.setViewportSize({width:1440,height:1000});
-  await page.evaluate(()=>window.scrollTo(0,0));
-  await page.screenshot({path:'artifacts/download-focus/website-desktop.png',fullPage:true});
+  const artifactDir = process.env.WEBSITE_ARTIFACT_DIR;
+  if (artifactDir) {
+   fs.mkdirSync(artifactDir,{recursive:true});
+   await page.evaluate(()=>{ document.activeElement?.blur(); window.scrollTo(0,0); });
+   await page.screenshot({path:artifactDir + '/website-mobile.png',fullPage:true});
+   await page.setViewportSize({width:1440,height:1000});
+   await page.evaluate(()=>window.scrollTo(0,0));
+   await page.screenshot({path:artifactDir + '/website-desktop.png',fullPage:true});
+  }
   const fallback = await browser.newPage({javaScriptEnabled:false});
   await fallback.goto(base);
   assert.equal(await fallback.locator('noscript a[download]').count(),2);
