@@ -1,0 +1,18 @@
+[
+  {
+    "site": "blender-public-media",
+    "url": "https://download.blender.org/peach/trailer/trailer_400p.ogg",
+    "parsed": true,
+    "title": "trailer_400p",
+    "formats": 1,
+    "errorSummary": ""
+  },
+  {
+    "site": "bilibili-alternate",
+    "url": "https://www.bilibili.com/video/BV1xx411c7mD",
+    "parsed": true,
+    "title": "字幕君交流场所",
+    "formats": 8,
+    "errorSummary": ""
+  }
+]

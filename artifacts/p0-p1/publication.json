@@ -1,0 +1,109 @@
+{
+  "Version": "0.2.0",
+  "Commit": "623dfda1306bd011caad788062a3e0122510ba17",
+  "Branch": "codex/download-readiness",
+  "GitHubRelease": {
+    "assets": [
+      {
+        "apiUrl": "https://api.github.com/repos/jonbrown66/ydlite/releases/assets/634365662",
+        "contentType": "application/x-msdownload",
+        "createdAt": "2026-10-12T16:45:34Z",
+        "digest": "sha256:213939c401df5bb52134e73a70f546bc16c5fffff944908a01ef2de43ae4caf3",
+        "downloadCount": 0,
+        "id": "RA_kwDOS5ynX84lz6be",
+        "label": "",
+        "name": "YDLite_0.2.0_x64-setup.exe",
+        "size": 3829270,
+        "state": "uploaded",
+        "updatedAt": "2026-10-12T16:45:36Z",
+        "url": "https://github.com/jonbrown66/ydlite/releases/download/v0.2.0/YDLite_0.2.0_x64-setup.exe"
+      },
+      {
+        "apiUrl": "https://api.github.com/repos/jonbrown66/ydlite/releases/assets/634365663",
+        "contentType": "application/octet-stream",
+        "createdAt": "2026-10-12T16:45:34Z",
+        "digest": "sha256:aea797298920d6c5b1a4a916bfada59f0a3beac2d51a5237c407cbe6fada5d37",
+        "downloadCount": 0,
+        "id": "RA_kwDOS5ynX84lz6bf",
+        "label": "",
+        "name": "YDLite_0.2.0_x64_en-US.msi",
+        "size": 5926912,
+        "state": "uploaded",
+        "updatedAt": "2026-10-12T16:45:36Z",
+        "url": "https://github.com/jonbrown66/ydlite/releases/download/v0.2.0/YDLite_0.2.0_x64_en-US.msi"
+      }
+    ],
+    "isDraft": false,
+    "isPrerelease": false,
+    "publishedAt": "2026-10-12T16:45:37Z",
+    "tagName": "v0.2.0",
+    "targetCommitish": "623dfda1306bd011caad788062a3e0122510ba17",
+    "url": "https://github.com/jonbrown66/ydlite/releases/tag/v0.2.0"
+  },
+  "GitHubAssetHashes": "matched",
+  "Website": "production published and verified",
+  "WebsiteTarget": "https://ydlite.pages.dev",
+  "CheckedAt": "2026-10-13T14:23:47.2406202+08:00",
+  "ProductionDeployment": {
+    "id": "360a227c-d8fe-4af3-8c8b-b0c4983d0cb5",
+    "url": "https://360a227c.ydlite.pages.dev",
+    "environment": "production",
+    "commit": "623dfda1306bd011caad788062a3e0122510ba17",
+    "latest_stage": {
+      "name": "deploy",
+      "started_on": "2026-10-13T06:21:06.37041Z",
+      "ended_on": "2026-10-13T06:21:11.322435Z",
+      "status": "success"
+    },
+    "stages": [
+      {
+        "name": "queued",
+        "started_on": "2026-10-13T06:20:46.781169Z",
+        "ended_on": "2026-10-13T06:20:46.783794Z",
+        "status": "success"
+      },
+      {
+        "name": "initialize",
+        "started_on": "2026-10-13T06:20:46.783794Z",
+        "ended_on": "2026-10-13T06:20:48.420886Z",
+        "status": "success"
+      },
+      {
+        "name": "clone_repo",
+        "started_on": "2026-10-13T06:20:48.420886Z",
+        "ended_on": "2026-10-13T06:20:50.27516Z",
+        "status": "success"
+      },
+      {
+        "name": "build",
+        "started_on": "2026-10-13T06:20:50.27516Z",
+        "ended_on": "2026-10-13T06:21:06.37041Z",
+        "status": "success"
+      },
+      {
+        "name": "deploy",
+        "started_on": "2026-10-13T06:21:06.37041Z",
+        "ended_on": "2026-10-13T06:21:11.322435Z",
+        "status": "success"
+      }
+    ],
+    "aliases": null
+  },
+  "ProductionDownloads": [
+    {
+      "Name": "YDLite_0.2.0_x64-setup.exe",
+      "Status": 200,
+      "Bytes": 3829270,
+      "SHA256": "213939C401DF5BB52134E73A70F546BC16C5FFFFF944908A01EF2DE43AE4CAF3",
+      "MatchesLocal": true
+    },
+    {
+      "Name": "YDLite_0.2.0_x64_en-US.msi",
+      "Status": 200,
+      "Bytes": 5926912,
+      "SHA256": "AEA797298920D6C5B1A4A916BFADA59F0A3BEAC2D51A5237C407CBE6FADA5D37",
+      "MatchesLocal": true
+    }
+  ],
+  "BrowserVerification": "v0.2.0 visible; all download links use 0.2.0; images loaded; no document overflow at 1280px"
+}

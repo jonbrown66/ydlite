@@ -1,0 +1,28 @@
+{
+  "Timestamp": "2026-10-12T11:12:33.2063380+08:00",
+  "Checks": [
+    "download-queue-regression",
+    "persistent-queue-regression",
+    "queue-browser-regression with keyboard and drop checks",
+    "frontend-regression with independent artifact directory",
+    "npm run build:app",
+    "npm run tauri build",
+    "git diff --check"
+  ],
+  "Installers": [
+    {
+      "Path": "E:\\demo2\\ydlite\\public\\downloads\\YDLite_0.2.0_x64-setup.exe",
+      "Bytes": 3810402,
+      "SHA256": "48EB23734722CD10810071EBB88A6A8ED9C8417F4B46CAB2EB940F407202373A"
+    },
+    {
+      "Path": "E:\\demo2\\ydlite\\public\\downloads\\YDLite_0.2.0_x64_en-US.msi",
+      "Bytes": 5902336,
+      "SHA256": "475509C0D7BC0BC0C56229928E8843502F8BFA2792B9304D0BB00DADE8C2C6B0"
+    }
+  ],
+  "Limitations": [
+    "Chrome tests use mocked Tauri IPC",
+    "Native WebView2 and installation were not exercised this turn"
+  ]
+}

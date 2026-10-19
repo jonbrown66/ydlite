@@ -1,0 +1,166 @@
+{
+  "fixture": "Real Vue frontend with mocked Tauri IPC; no real downloads",
+  "groups": [
+    {
+      "groups": [
+        {
+          "insets": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "itemGap": "2px",
+          "itemHeight": 32,
+          "itemRadius": "8px",
+          "name": "Download input mode",
+          "outerRadius": "12px",
+          "outerStroke": "rgba(224, 231, 244, 0.13) 0px 0px 0px 1px",
+          "selectedStroke": "rgba(224, 231, 244, 0.13) 0px 0px 0px 1px inset"
+        }
+      ],
+      "overflow": false,
+      "theme": "dark"
+    },
+    {
+      "groups": [
+        {
+          "insets": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "itemGap": "2px",
+          "itemHeight": 32,
+          "itemRadius": "8px",
+          "name": "Appearance",
+          "outerRadius": "12px",
+          "outerStroke": "rgba(224, 231, 244, 0.13) 0px 0px 0px 1px",
+          "selectedStroke": "rgba(224, 231, 244, 0.13) 0px 0px 0px 1px inset"
+        }
+      ],
+      "overflow": false,
+      "theme": "dark"
+    },
+    {
+      "groups": [
+        {
+          "insets": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "itemGap": "2px",
+          "itemHeight": 32,
+          "itemRadius": "8px",
+          "name": "Download input mode",
+          "outerRadius": "12px",
+          "outerStroke": "rgba(224, 231, 244, 0.13) 0px 0px 0px 1px",
+          "selectedStroke": "rgba(224, 231, 244, 0.13) 0px 0px 0px 1px inset"
+        }
+      ],
+      "overflow": false,
+      "theme": "dark"
+    },
+    {
+      "groups": [
+        {
+          "insets": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "itemGap": "2px",
+          "itemHeight": 32,
+          "itemRadius": "8px",
+          "name": "Download input mode",
+          "outerRadius": "12px",
+          "outerStroke": "rgba(224, 231, 244, 0.13) 0px 0px 0px 1px",
+          "selectedStroke": "rgba(224, 231, 244, 0.13) 0px 0px 0px 1px inset"
+        }
+      ],
+      "overflow": false,
+      "theme": "dark"
+    },
+    {
+      "groups": [
+        {
+          "insets": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "itemGap": "2px",
+          "itemHeight": 32,
+          "itemRadius": "8px",
+          "name": "Download input mode",
+          "outerRadius": "12px",
+          "outerStroke": "rgba(24, 24, 27, 0.12) 0px 0px 0px 1px",
+          "selectedStroke": "rgba(24, 24, 27, 0.12) 0px 0px 0px 1px inset"
+        }
+      ],
+      "overflow": false,
+      "theme": "light"
+    },
+    {
+      "groups": [
+        {
+          "insets": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "itemGap": "2px",
+          "itemHeight": 32,
+          "itemRadius": "8px",
+          "name": "Appearance",
+          "outerRadius": "12px",
+          "outerStroke": "rgba(224, 231, 244, 0.13) 0px 0px 0px 1px",
+          "selectedStroke": "rgba(224, 231, 244, 0.13) 0px 0px 0px 1px inset"
+        }
+      ],
+      "overflow": false,
+      "theme": "dark"
+    },
+    {
+      "groups": [
+        {
+          "insets": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "itemGap": "2px",
+          "itemHeight": 32,
+          "itemRadius": "8px",
+          "name": "Appearance",
+          "outerRadius": "12px",
+          "outerStroke": "rgba(24, 24, 27, 0.12) 0px 0px 0px 1px",
+          "selectedStroke": "rgba(24, 24, 27, 0.12) 0px 0px 0px 1px inset"
+        }
+      ],
+      "overflow": false,
+      "theme": "light"
+    }
+  ],
+  "menu": {
+    "inset": 4,
+    "gap": 2,
+    "height": 36,
+    "innerRadius": 8,
+    "outerRadius": 12
+  },
+  "keyboard": {
+    "tabs": true,
+    "comboboxEscapeReturnsFocus": true,
+    "actionMenuEscapeReturnsFocus": true,
+    "forcedColorsFocus": true
+  },
+  "consoleErrors": []
+}

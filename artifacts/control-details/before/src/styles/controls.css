@@ -1,0 +1,25 @@
+/* Controls share the same dimensions as the Vue Button primitive. */
+.button, .tip-btn { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--radius-control); background: var(--surface); color: var(--ink); font-size: 14px; font-weight: 500; box-shadow: var(--control-shadow); }
+.ui-button { border: 0; font-size: 14px; line-height: 20px; user-select: none; background: var(--surface); color: var(--ink); box-shadow: var(--control-shadow); }
+.button:hover:not(:disabled), .tip-btn:hover:not(:disabled), .ui-button-secondary:hover:not(:disabled), .ui-button-outline:hover:not(:disabled) { background: var(--surface-hover); }
+.button.primary, .tip-btn.primary, .ui-button-primary { color: var(--primary-foreground); background: var(--primary-fill); box-shadow: var(--primary-shadow); }
+.button.primary:hover:not(:disabled), .tip-btn.primary:hover:not(:disabled), .ui-button-primary:hover:not(:disabled) { background: var(--primary-fill-hover); }
+.button.primary:active:not(:disabled), .tip-btn.primary:active:not(:disabled), .ui-button-primary:active:not(:disabled) { background: var(--primary-hover); box-shadow: 0 0 0 1px var(--primary-hover), inset 0 1px 2px rgb(24 24 27 / 16%); }
+.ui-button-ghost { background: transparent; color: var(--muted); box-shadow: none; }
+.ui-button-ghost:hover:not(:disabled), .ui-button-ghost[aria-expanded=true] { background: var(--surface-hover); color: var(--ink); }
+.ui-button-danger { background: var(--danger); color: var(--danger-foreground); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 85%, black), inset 0 1px 0 rgb(255 255 255 / 15%), 0 1px 2px rgb(24 24 27 / 5%); }
+.ui-button-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 90%, black); }
+.ui-button:focus-visible { box-shadow: none; }
+.button.danger { color: var(--danger); background: var(--danger-soft); }
+.button:disabled, .link-button:disabled, .tip-btn:disabled { opacity: 0.45; }
+.button, .ui-button { text-decoration: none; transition: transform 100ms var(--ease-out); }
+.button:active:not(:disabled), .ui-button:active:not(:disabled) { transform: translateY(1px); }
+.button.icon-button, .button.icon-only { width: 36px; padding: 0; }
+.link-button { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--primary); font-size: 14px; font-weight: 400; box-shadow: none; }
+.link-button:hover:not(:disabled) { color: var(--primary-hover); text-decoration: underline; }
+.link-button.compact { min-height: 28px; padding: 0 6px; }
+
+
+:where(button, input, select, textarea, summary, a):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (forced-colors: active) { :where(button, input, select, textarea, summary, a):focus-visible { outline-color: Highlight; } .button, .ui-button { border: 1px solid ButtonText; } }
+@media (prefers-reduced-motion: reduce) { .button, .ui-button { transition: none; } }

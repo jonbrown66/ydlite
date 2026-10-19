@@ -1,0 +1,16 @@
+[
+  {
+    "Name": "YDLite_0.2.0_x64-setup.exe",
+    "Status": 200,
+    "Bytes": 3829270,
+    "SHA256": "213939C401DF5BB52134E73A70F546BC16C5FFFFF944908A01EF2DE43AE4CAF3",
+    "MatchesLocal": true
+  },
+  {
+    "Name": "YDLite_0.2.0_x64_en-US.msi",
+    "Status": 200,
+    "Bytes": 5926912,
+    "SHA256": "AEA797298920D6C5B1A4A916BFADA59F0A3BEAC2D51A5237C407CBE6FADA5D37",
+    "MatchesLocal": true
+  }
+]

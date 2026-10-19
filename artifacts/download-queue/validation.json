@@ -1,0 +1,32 @@
+{
+  "Timestamp": "2026-10-12T02:45:07.2009991+08:00",
+  "RustTests": 40,
+  "Checks": [
+    "persistent-queue-regression",
+    "download-queue-regression",
+    "download-storage-regression",
+    "frontend-regression",
+    "queue-browser-regression",
+    "cargo fmt --check",
+    "git diff --check",
+    "npm run tauri build"
+  ],
+  "Installers": [
+    {
+      "Path": "E:\\demo2\\ydlite\\public\\downloads\\YDLite_0.2.0_x64-setup.exe",
+      "Bytes": 3810076,
+      "SHA256": "129EFCA430E71195C883223068BAB5F791E3F4E5B2EFEB01916F098AA9C5D328"
+    },
+    {
+      "Path": "E:\\demo2\\ydlite\\public\\downloads\\YDLite_0.2.0_x64_en-US.msi",
+      "Bytes": 5902336,
+      "SHA256": "DC1C97F8207E147808FAB8724C0F4CE1520ADDB311029D9414750ECFE2C02084"
+    }
+  ],
+  "Limitations": [
+    "Browser tests use mocked Tauri IPC",
+    "Real yt-dlp integration uses local HTTP test media",
+    "No real-site authentication or installer upgrade tested",
+    "Partial-file reuse depends on the media source"
+  ]
+}

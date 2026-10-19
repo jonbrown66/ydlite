@@ -1,0 +1,20 @@
+[
+  {
+    "site": "youtube",
+    "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+    "parsed": false,
+    "cause": "sign-in/bot challenge"
+  },
+  {
+    "site": "bilibili",
+    "url": "https://www.bilibili.com/video/BV1JE411F741",
+    "parsed": false,
+    "cause": "unavailable/other"
+  },
+  {
+    "site": "public-media",
+    "url": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+    "parsed": false,
+    "cause": "blocked/access"
+  }
+]
