@@ -29,6 +29,8 @@ pub struct DownloadMetrics {
     pub downloaded_bytes: Option<u64>,
     pub total_bytes: Option<u64>,
     pub total_is_estimate: bool,
+    /// Raw bytes per second, so the UI can draw a real speed trace.
+    pub speed_bytes: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -114,6 +116,10 @@ impl DownloadProgressTracker {
                         downloaded_bytes: Some(downloaded),
                         total_bytes: total,
                         total_is_estimate: !self.stage_exact.iter().all(|exact| *exact),
+                        speed_bytes: data
+                            .get("speed")
+                            .and_then(|v| v.as_f64())
+                            .filter(|v| v.is_finite() && *v >= 0.0),
                     });
                     event.total = total.map(|bytes| byte_label(bytes as f64));
                     // yt-dlp's ETA covers only the current stream; include the remaining audio/video.
@@ -317,6 +323,7 @@ pub fn parse_progress_line(line: &str) -> Option<DownloadProgressEvent> {
                 downloaded_bytes: number("downloaded_bytes").map(|value| value as u64),
                 total_bytes: total.map(|value| value as u64),
                 total_is_estimate: number("total_bytes").filter(|value| *value > 0.0).is_none(),
+                speed_bytes: number("speed").filter(|value| *value > 0.0),
             }),
         });
     }

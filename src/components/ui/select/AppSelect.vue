@@ -209,8 +209,8 @@ onBeforeUnmount(() => {
   padding-inline: var(--control-padding-inline);
   border: 0;
   border-radius: var(--radius-control);
-  background: var(--workspace-surface);
-  color: var(--workspace-ink);
+  background: var(--surface);
+  color: var(--ink);
   font-size: 14px;
   line-height: 20px;
   font-weight: 400;
@@ -225,7 +225,7 @@ onBeforeUnmount(() => {
 }
 
 .app-select.open .app-select-trigger {
-  background: var(--workspace-surface);
+  background: var(--surface);
   box-shadow: 0 0 0 1px var(--primary-line), 0 1px 2px rgb(24 24 27 / 5%);
 }
 
@@ -249,8 +249,8 @@ onBeforeUnmount(() => {
 }
 
 .select-chevron {
-  color: var(--workspace-subtle);
-  transition: transform 160ms var(--workspace-ease);
+  color: var(--subtle);
+  transition: transform 160ms var(--ease-out);
 }
 
 .app-select.open .select-chevron {
@@ -267,12 +267,12 @@ onBeforeUnmount(() => {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-color: var(--workspace-border-strong) transparent;
+  scrollbar-color: var(--border-strong) transparent;
   scrollbar-width: thin;
   border: 0;
   border-radius: var(--control-group-radius);
-  background: var(--workspace-surface);
-  box-shadow: 0 0 0 1px var(--workspace-border), var(--workspace-shadow);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border), var(--shadow-float);
 }
 
 .app-select-menu::-webkit-scrollbar {
@@ -282,7 +282,7 @@ onBeforeUnmount(() => {
 .app-select-menu::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 99px;
-  background: var(--workspace-border-strong);
+  background: var(--border-strong);
   background-clip: padding-box;
 }
 
@@ -298,7 +298,7 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: var(--radius-option);
   background: transparent;
-  color: var(--workspace-ink);
+  color: var(--ink);
   font-size: 14px;
   line-height: 20px;
   text-align: left;
@@ -307,24 +307,24 @@ onBeforeUnmount(() => {
 
 .app-select-option.active {
   background: var(--surface-hover);
-  color: var(--workspace-ink);
+  color: var(--ink);
 }
 
 .app-select-option.selected {
-  color: var(--workspace-ink);
+  color: var(--ink);
   font-weight: 500;
 }
 .app-select-option:focus-visible { outline-offset: calc(-1 * var(--focus-width)); }
 .app-select-option:active { background: var(--primary-soft); }
 
 .select-check {
-  color: var(--workspace-accent);
+  color: var(--primary);
 }
 
 .select-pop-enter-active,
 .select-pop-leave-active {
   transform-origin: top center;
-  transition: opacity 140ms ease-out, transform 160ms var(--workspace-ease);
+  transition: opacity 140ms ease-out, transform 160ms var(--ease-out);
 }
 
 .select-pop-enter-from,

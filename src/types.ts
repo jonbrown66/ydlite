@@ -81,11 +81,13 @@ export type DownloadRequest = {
   overwriteConfirmed?: boolean
 }
 
-export type DownloadResult = { cancelled: boolean; filePath: string | null; skipped?: boolean }
+export type DownloadResult = { cancelled: boolean; paused: boolean; filePath: string | null; skipped?: boolean }
+
+export type DownloadFailure = { kind: 'network' | 'access' | 'login' | 'rateLimit' | 'disk' | 'permission' | 'unsupported' | 'format' | 'folder' | 'tools' | 'unknown'; message: string }
 
 export type DownloadProgressEvent = {
   requestId?: string | null
-  status: 'starting' | 'downloading' | 'processing' | 'finished' | 'cancelled' | 'error' | 'log'
+  status: 'starting' | 'downloading' | 'processing' | 'finished' | 'paused' | 'cancelled' | 'error' | 'log'
   percent?: number | null
   total?: string | null
   speed?: string | null
@@ -97,6 +99,7 @@ export type DownloadProgressEvent = {
     downloadedBytes?: number | null
     totalBytes?: number | null
     totalIsEstimate: boolean
+    speedBytes?: number | null
   } | null
 }
 

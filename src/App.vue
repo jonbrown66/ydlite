@@ -11,14 +11,11 @@ import moonIcon from 'iconoir/icons/half-moon.svg?url'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import { canCloseWindow } from '@/lib/closeGuards'
 import { Button } from '@/components/ui/button'
-import SidebarProgress from '@/components/SidebarProgress.vue'
-import { useActivityStore } from '@/stores/activity'
-import { useDownloadQueueStore } from '@/stores/downloadQueue'
+import { useDownloadStore } from '@/stores/download'
 import { useAppearanceStore } from '@/stores/appearance'
 
 const appWindow = getCurrentWindow()
-const activity = useActivityStore()
-const downloadQueue = useDownloadQueueStore()
+const download = useDownloadStore()
 const appearance = useAppearanceStore()
 const themeAction = computed(() => appearance.resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode')
 const maximized = ref(false)
@@ -44,11 +41,11 @@ async function checkClose() {
   closePending = (async () => {
     try {
       if (!await canCloseWindow()) return false
-      if (!downloadQueue.running && !activity.visibleTasks.some(task => ['active', 'cancelling'].includes(task.state))) return true
+      if (!download.running) return true
       showCloseConfirm.value = true
       return await new Promise<boolean>(resolve => { resolveClose = resolve })
     } catch {
-      closeError.value = 'Unable to check unsaved changes. Try again.'
+      closeError.value = 'Unable to close the window. Try again.'
       return false
     }
   })()
@@ -63,7 +60,7 @@ async function requestWindowClose() {
 let unlistenResize: (() => void) | undefined
 
 const navItems = [
-  { name: 'download', label: 'Downloads', icon: downloadIcon },
+  { name: 'download', label: 'Download', icon: downloadIcon },
   { name: 'tasks', label: 'History', icon: clockIcon },
 ] as const
 
@@ -89,8 +86,6 @@ async function toggleMaximize() {
 onMounted(async () => {
   document.addEventListener('pointerdown', usePointerMotion, true)
   document.addEventListener('keydown', useKeyboardMotion, true)
-  void activity.startListening()
-  void downloadQueue.initialize().catch(() => { closeError.value = 'Unable to listen for download progress. Try again before starting a download.' })
   unlistenClose = await appWindow.onCloseRequested(async event => {
     if (closePending) { event.preventDefault(); return }
     if (!await checkClose()) event.preventDefault()
@@ -108,8 +103,6 @@ onBeforeUnmount(() => {
   unlistenResize?.()
   unlistenClose?.()
   settleClose(false)
-  activity.stopListening()
-  downloadQueue.dispose()
 })
 </script>
 
@@ -142,7 +135,6 @@ onBeforeUnmount(() => {
     <div class="app-body">
       <aside class="app-sidebar">
         <div class="sidebar-main">
-          <span class="sidebar-caption">Workspace</span>
           <nav aria-label="Main navigation">
             <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="sidebar-link" :title="item.label" :aria-label="item.label">
               <i class="icon" :style="iconStyle(item.icon)" />
@@ -151,10 +143,9 @@ onBeforeUnmount(() => {
           </nav>
         </div>
         <div class="sidebar-footer">
-          <SidebarProgress />
           <button class="sidebar-link appearance-toggle" type="button" :aria-label="themeAction" :title="themeAction" @click="appearance.toggle()">
             <i class="icon" aria-hidden="true" :style="iconStyle(appearance.resolved === 'dark' ? moonIcon : sunIcon)" />
-            <span>{{ appearance.resolved === 'dark' ? 'Dark appearance' : 'Light appearance' }}</span>
+            <span>{{ appearance.resolved === 'dark' ? 'Dark' : 'Light' }}</span>
           </button>
           <RouterLink :to="{ name: 'settings' }" class="sidebar-link settings-link" title="Settings" aria-label="Settings">
             <i class="icon" :style="iconStyle(settingsIcon)" />
@@ -162,7 +153,7 @@ onBeforeUnmount(() => {
           </RouterLink>
           <button class="sidebar-collapse-toggle" type="button" :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" @click="toggleSidebar">
             <i class="icon" :style="iconStyle(navArrowLeftIcon)" />
-            <span>{{ sidebarCollapsed ? 'Expand' : 'Collapse sidebar' }}</span>
+            <span>{{ sidebarCollapsed ? 'Expand' : 'Collapse' }}</span>
           </button>
         </div>
       </aside>
@@ -179,11 +170,11 @@ onBeforeUnmount(() => {
     </div>
     <p v-if="closeError" class="window-error" role="alert">{{ closeError }}</p>
     <p v-if="appearance.error" class="window-error" role="alert">{{ appearance.error }}</p>
-    <AppDialog :open="showCloseConfirm" title="Tasks are still running" @close="settleClose(false)">
-      <p>Closing will interrupt the current task. The download queue is saved; you can continue it after reopening the app.</p>
+    <AppDialog :open="showCloseConfirm" title="Download in progress" @close="settleClose(false)">
+      <p>Closing will stop the current download.</p>
       <div class="modal-actions">
-        <Button variant="outline" @click="settleClose(false)">Keep working</Button>
-        <Button variant="danger" @click="settleClose(true)">Close anyway</Button>
+        <Button variant="outline" @click="settleClose(false)">Keep downloading</Button>
+        <Button class="primary-danger" @click="settleClose(true)">Close anyway</Button>
       </div>
     </AppDialog>
   </main>

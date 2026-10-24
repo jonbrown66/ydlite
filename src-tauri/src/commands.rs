@@ -522,7 +522,7 @@ fn video_info_from_value(
     let thumbnail = value
         .get("thumbnail")
         .and_then(|v| v.as_str())
-        .map(ToString::to_string);
+        .map(secure_thumbnail_url);
     let extractor = value
         .get("extractor")
         .and_then(|v| v.as_str())
@@ -727,6 +727,16 @@ fn retain_query_params(url: &mut Url, allowed: &[&str]) {
     }
 }
 
+/// Bilibili and some other extractors report `http://` thumbnails. The app
+/// runs on a secure custom protocol, so the webview blocks those as mixed
+/// content and the preview stays empty. The same hosts serve the file over TLS.
+fn secure_thumbnail_url(url: &str) -> String {
+    match url.strip_prefix("http://") {
+        Some(rest) => format!("https://{rest}"),
+        None => url.to_string(),
+    }
+}
+
 fn format_attempts(attempts: &[ParseAttempt]) -> String {
     if attempts.is_empty() {
         return "No parse attempts were executed".to_string();
@@ -761,6 +771,81 @@ fn site_label(site: ytdlp::SiteProfile) -> &'static str {
 #[tauri::command]
 pub async fn cancel_download(state: State<'_, DownloadState>) -> Result<(), AppError> {
     state.cancel_current().await
+}
+
+#[tauri::command]
+pub async fn pause_download(state: State<'_, DownloadState>) -> Result<(), AppError> {
+    state.pause_current().await
+}
+
+/// Fetches a preview thumbnail on the Rust side.
+///
+/// Image hosts such as Bilibili's reject requests whose `Referer` is not their
+/// own site (the app's origin is a custom protocol), and a cross-origin <img>
+/// would also need CORS. Fetching here avoids both and keeps the bytes local.
+#[tauri::command]
+pub async fn fetch_thumbnail(url: String) -> Result<String, AppError> {
+    let clean = url.trim();
+    if !(clean.starts_with("https://") || clean.starts_with("http://")) {
+        return Err(AppError::user("图片地址无效。", "Unsupported thumbnail URL"));
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|error| AppError::user("无法加载缩略图。", error.to_string()))?;
+    let response = client
+        .get(clean)
+        .send()
+        .await
+        .map_err(|error| AppError::user("无法加载缩略图。", error.to_string()))?;
+    if !response.status().is_success() {
+        return Err(AppError::user(
+            "无法加载缩略图。",
+            format!("Thumbnail responded {}", response.status()),
+        ));
+    }
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+    if !content_type.starts_with("image/") {
+        return Err(AppError::user(
+            "无法加载缩略图。",
+            format!("Unexpected content type: {content_type}"),
+        ));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| AppError::user("无法加载缩略图。", error.to_string()))?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err(AppError::user("缩略图过大。", "Thumbnail exceeds 8 MiB"));
+    }
+    Ok(format!(
+        "data:{content_type};base64,{}",
+        base64_encode(&bytes)
+    ))
+}
+
+fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(ALPHABET[(n >> 18) as usize & 63] as char);
+        out.push(ALPHABET[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { ALPHABET[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { ALPHABET[n as usize & 63] as char } else { '=' });
+    }
+    out
 }
 
 #[tauri::command]
@@ -825,6 +910,35 @@ mod tests {
     }
 
     #[test]
+    fn thumbnail_proxy_encodes_base64_without_padding_errors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+        assert_eq!(
+            base64_encode(&[0xff, 0xfe, 0xfd]),
+            "//79",
+            "high bytes must not be sign-extended"
+        );
+    }
+
+    #[test]
+    fn insecure_thumbnail_urls_upgrade_to_https() {
+        assert_eq!(
+            secure_thumbnail_url("http://i0.hdslb.com/bfs/archive/a11e.jpg"),
+            "https://i0.hdslb.com/bfs/archive/a11e.jpg"
+        );
+        assert_eq!(
+            secure_thumbnail_url("https://i.ytimg.com/vi/x/hq.jpg"),
+            "https://i.ytimg.com/vi/x/hq.jpg"
+        );
+        assert_eq!(secure_thumbnail_url("data:image/png;base64,AA"), "data:image/png;base64,AA");
+    }
+
+    #[test]
     fn clean_bilibili_url_keeps_page_only() {
         let cleaned = clean_url_for_site(
             "https://www.bilibili.com/video/BV1R541157SQ?spm_id_from=333&p=39&vd_source=abc",
@@ -852,5 +966,21 @@ mod tests {
         );
 
         assert_eq!(cleaned, "https://x.com/example/status/123");
+    }
+}
+
+#[cfg(test)]
+mod thumbnail_proxy_tests {
+    /// Network test: confirms the proxy really retrieves a referer-protected
+    /// image. Run explicitly with `--ignored`.
+    #[tokio::test]
+    #[ignore = "network access; verifies a real referer-protected image host"]
+    async fn fetches_referer_protected_thumbnail() {
+        let url = std::env::var("YDLITE_TEST_THUMBNAIL_URL").unwrap_or_else(|_| {
+            "https://i0.hdslb.com/bfs/archive/a11eea34af802770d1e6fb47d202d67a0e3d87ea.jpg".into()
+        });
+        let data = super::fetch_thumbnail(url).await.unwrap();
+        assert!(data.starts_with("data:image/"), "got {}", &data[..40.min(data.len())]);
+        assert!(data.len() > 2000, "thumbnail payload looks empty");
     }
 }

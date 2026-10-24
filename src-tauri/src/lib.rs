@@ -23,6 +23,8 @@ pub fn run() {
             commands::parse_video,
             commands::start_download,
             commands::cancel_download,
+            commands::pause_download,
+            commands::fetch_thumbnail,
             commands::open_path,
             commands::open_parent_folder,
             tool_installer::install_missing_tools,

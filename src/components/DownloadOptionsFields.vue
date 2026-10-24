@@ -10,16 +10,12 @@ const quality = computed({ get: () => props.modelValue.quality, set: value => em
 </script>
 <template>
   <div class="output-options">
-    <label><span>Filename</span><AppSelect v-model="naming" :disabled="disabled" aria-label="Filename template" :options="[{value:'title',label:'Title'},{value:'authorTitle',label:'Author + title'},{value:'dateTitle',label:'Upload date + title'}]" /></label>
-    <label><span>Already downloaded</span><AppSelect v-model="conflict" :disabled="disabled" aria-label="Duplicate handling" :options="[{value:'skip',label:'Keep existing file · skip'},{value:'number',label:'Save another copy · number'},{value:'overwrite',label:'Replace existing file'}]" /></label>
-    <label><span>Automatic format selection</span><AppSelect v-model="quality" :disabled="disabled" aria-label="Format preference" :options="[{value:'compatible',label:'Compatibility · prefer MP4'},{value:'quality',label:'Quality · best available'}]" /></label>
-    <p>Chinese titles are preserved. A media and format ID prevents unrelated files from sharing a name.</p>
-    <p v-if="conflict === 'overwrite'" class="overwrite-note" role="status">Existing files for this media and format will be replaced. Downloads ask for confirmation before starting.</p>
+    <label><span>Name</span><AppSelect v-model="naming" :disabled="disabled" aria-label="Filename" :options="[{value:'title',label:'Title'},{value:'authorTitle',label:'Author + title'},{value:'dateTitle',label:'Date + title'}]" /></label>
+    <label><span>If exists</span><AppSelect v-model="conflict" :disabled="disabled" aria-label="Existing files" :options="[{value:'skip',label:'Skip'},{value:'number',label:'Keep both'},{value:'overwrite',label:'Replace'}]" /></label>
+    <label><span>Quality</span><AppSelect v-model="quality" :disabled="disabled" aria-label="Quality preference" :options="[{value:'compatible',label:'Compatible · MP4'},{value:'quality',label:'Best available'}]" /></label>
   </div>
 </template>
 <style scoped>
 .output-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 14px; }
 label { display: grid; gap: 6px; min-width: 0; font-size: 13px; }
-p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.overwrite-note { color: var(--danger); }
 </style>

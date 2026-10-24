@@ -23,3 +23,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Runtime dependencies
+
+YDLite bundles no third-party runtime code beyond the packages listed in
+`package.json` and `src-tauri/Cargo.toml` (both under their own OSI-approved
+licenses, recorded in the lockfiles). Downloads are performed by yt-dlp
+(Unlicense) and FFmpeg (LGPL/GPL as built), which the app can install locally
+at the user's direction; neither is distributed with the installers.

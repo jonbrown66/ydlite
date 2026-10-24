@@ -1,66 +1,76 @@
 # YDLite
 
-YDLite 是一款 Windows 视频与音频下载工具。粘贴链接，选择格式和保存目录，查看进度并打开下载结果。
+Windows 视频与音频下载工具。粘贴链接，选择格式和保存目录，下载完成后直接打开文件。
 
 [下载 Windows 版](https://ydlite.pages.dev) · [提交问题](https://github.com/jonbrown66/ydlite/issues)
 
 ## 功能
 
-- 使用 yt-dlp 解析和下载视频、音频及播放列表。
-- 选择最佳可用格式、720p 上限、MP3 音频或指定视频格式。
-- 展开详细格式，区分相同分辨率的编码、帧率和音轨语言；指定格式失效时提示重新选择。
-- 选择兼容优先或质量优先；视频独立音轨可单独选择，音视频合一的格式保留自带音轨。
-- 保留中文文件名，提供标题、作者＋标题、上传日期＋标题预设，附加媒体与格式标识。
-- 重复下载可跳过、编号或确认覆盖；不同媒体同名不会共享输出文件。
-- 显示文件大小估算、下载速度、剩余时间和文件处理状态。
-- 批量粘贴多行链接，去重并逐项解析；播放列表展开为独立任务。
-- 保存最多 500 个队列任务，包括目录、格式和状态；重启后手动继续未完成任务。
-- 顺序下载，单项取消不影响后续任务；失败可单独重试或重新解析，也可修改目录与格式。
-- 使用自己的 cookies.txt 访问需要登录的内容。
-- 保存最近 100 条成功下载记录，按名称、来源和路径搜索。
-- 保存默认目录和格式，管理剪贴板链接提示。
-- 检查并安装 yt-dlp、FFmpeg，更新 yt-dlp。
+- 用 yt-dlp 解析并下载视频、音频和播放列表条目。
+- 格式可选最佳可用、720p 上限、MP3 音频，或指定具体格式。指定格式会区分相同分辨率的编码、帧率和音轨语言，失效时提示重新选择。
+- 视频与音轨可分开选择：兼容优先合并为 MP4，质量优先保留来源编码并合并为 MKV。
+- 进度条显示完成度，同时给出已下载大小、总大小和实时速率；开始前显示估算大小。
+- 支持暂停。暂停会保留已下载的部分文件，继续时从断点续传（取决于站点是否支持）。
+- 播放列表先勾选条目，再依次下载；单个失败不影响其余条目，可只重试失败项。
+- 保留中文文件名。命名支持标题、作者＋标题、上传日期＋标题，并附加媒体与格式标识避免同名冲突。
+- 重复文件可跳过、另存编号副本，或确认后覆盖。
+- 保存最近 100 条下载记录，可按名称、来源和路径搜索。
+- 可指定自己的 cookies.txt，访问需要登录的内容。
+- 检查并安装 yt-dlp、FFmpeg，也可单独更新 yt-dlp。
 
 ## 使用
 
-1. 打开应用，按提示检查或安装下载工具。
-2. 粘贴链接并点击 Analyze。
-3. 选择格式、播放列表条目和保存文件夹。
-4. 开始下载；完成后打开文件或文件夹。
+1. 首次打开时按提示检查或安装下载工具。
+2. 粘贴链接，点击 **Go** 解析。
+3. 选择格式和保存文件夹；播放列表可勾选要下载的条目。
+4. 点击 **Download**。下载中可 **Pause** 或 **Cancel**，暂停后点 **Start** 继续。
 
-下载页使用 Single link / Multiple links 标签切换输入方式，保留各自输入和解析结果。批量下载选择 Multiple links，每行粘贴一个链接，选择共用的目录与格式，再点击 Import and analyze。查看解析结果后点击 Continue 开始下载；Pause after current 会完成当前任务后暂停。
-
-不提供字幕提取、转录、翻译或烧录功能。升级不会自动删除旧版创建的项目、模型或用户输出文件。
+不提供字幕提取、转录、翻译或烧录功能。
 
 ## 隐私与边界
 
-下载请求由本机 yt-dlp 发往目标站点。Cookie 文件由本机读取，应用不提供账号代理服务。下载能力取决于站点支持情况、网络和账号权限。文件大小与剩余时间可能是估算值。
+下载请求由本机 yt-dlp 发往目标站点，应用不代理账号，也不上传下载内容。Cookie 文件只在本机读取。
 
-清空历史只删除记录，不删除下载文件。无需 AI API Key 或语音模型。
+预览缩略图由应用在本地抓取后传给界面，不经过第三方服务。设置与历史保存在本机，清空历史只删除记录，不删除已下载的文件。
 
-队列保存在本机，包括来源链接与 Cookie 文件路径，不保存 Cookie 内容或下载器的临时媒体地址。关闭应用后不自动开始下载。继续任务时，能否复用部分文件取决于 yt-dlp、站点和媒体格式，不能保证每个来源都支持断点续传。正在解析的任务取消后，需要等待当前解析返回，结果会被丢弃。
+下载能力取决于站点支持、网络状况和账号权限；文件大小与剩余时间是估算值。关闭应用会中断正在进行的下载。能否复用部分文件取决于 yt-dlp、站点和媒体格式，并非所有来源都支持断点续传。
 
-文件重复检测以本版附加的媒体与格式标识为依据，检查保存目录中仍然存在的文件；无法识别旧版未带标识的文件，或用户手动移除标识后的文件。覆盖策略每次开始队列都需确认。更换命名预设不会绕过本版的重复检测。质量优先合并时使用 MKV，以保留来源编码。
+重复检测依据本版写入的媒体与格式标识，只识别带标识的文件；旧版文件或手动改名后的文件不会被识别为新版本已有。覆盖操作每次都需要确认。
 
 ## 安装与开发
 
-Windows x64 安装包：`YDLite_0.2.0_x64-setup.exe` / `YDLite_0.2.0_x64_en-US.msi`。应用依赖 yt-dlp、FFmpeg 和 WebView2。
+Windows x64 提供三种分发：
 
-开发需要 Node.js、Rust 和 Tauri 2 的 Windows 构建环境。
+| 文件 | 说明 |
+| --- | --- |
+| `YDLite_0.2.0_x64-setup.exe` | NSIS 安装包，推荐 |
+| `YDLite_0.2.0_x64_en-US.msi` | MSI，适合集中部署 |
+| `YDLite_0.2.0_x64-portable.zip` | 解压后直接运行 `YDLite.exe`，无需安装 |
+
+便携版把下载工具放在 exe 同级的 `tools\` 目录，或在设置页安装。设置和历史保存在当前 Windows 用户的 WebView2 配置中，不随 exe 移动。
+
+运行依赖 yt-dlp、FFmpeg 和 WebView2。WebView2 随 Windows 10/11 提供，yt-dlp 与 FFmpeg 可由应用安装。
+
+开发需要 Node.js、Rust 和 Tauri 2 的 Windows 构建环境。包管理器使用 pnpm。
 
 ```powershell
-npm install
-npm run tauri dev
+pnpm install
+pnpm tauri dev        # 启动桌面应用（需要 Rust）
+pnpm dev:web          # 仅在浏览器中预览落地页
 ```
 
+构建与检查：
+
 ```powershell
-node scripts/download-queue-regression.cjs
-node scripts/persistent-queue-regression.cjs
+pnpm build:app        # 类型检查 + 桌面前端构建
+pnpm build            # 落地页构建
+pnpm tauri build      # 生成安装包与便携构建
+
+node scripts/download-regression.cjs
 node scripts/download-options-regression.cjs
+node scripts/download-storage-regression.cjs
+node scripts/appearance-regression.cjs
 cargo test --manifest-path src-tauri/Cargo.toml --lib
-npm run build:app
-npm run build
-npm run tauri build
 ```
 
 浏览器回归说明见 [scripts/README.md](scripts/README.md)。技术栈为 Tauri 2、Vue 3、TypeScript、Rust、yt-dlp 与 FFmpeg。

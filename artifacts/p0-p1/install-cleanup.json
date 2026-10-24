@@ -1,6 +1,0 @@
-{
-  "ExitCode": 0,
-  "ApplicationRemoved": true,
-  "OutputSentinelPreserved": true,
-  "Mode": "Removed only the QA installation; app-data deletion was not selected."
-}

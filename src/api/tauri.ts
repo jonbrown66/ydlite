@@ -23,6 +23,14 @@ export function cancelDownload() {
   return invoke<void>('cancel_download')
 }
 
+export function pauseDownload() {
+  return invoke<void>('pause_download')
+}
+
+export function fetchThumbnail(url: string) {
+  return invoke<string>('fetch_thumbnail', { url })
+}
+
 export function openPath(path: string) {
   return invoke<void>('open_path', { path })
 }

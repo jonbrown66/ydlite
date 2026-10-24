@@ -1,25 +1,34 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import type { ButtonVariants } from '.'
-import { buttonVariants } from '.'
-import { cn } from '@/lib/utils'
 
-interface Props {
-  variant?: ButtonVariants['variant']
-  size?: ButtonVariants['size']
+type Variant = 'default' | 'primary' | 'outline' | 'ghost' | 'danger'
+type Size = 'default' | 'sm' | 'icon'
+
+const props = withDefaults(defineProps<{
+  variant?: Variant
+  size?: Size
   class?: HTMLAttributes['class']
   type?: 'button' | 'submit' | 'reset'
+}>(), { type: 'button' })
+
+const VARIANTS: Record<Variant, string> = {
+  default: '',
+  primary: 'primary',
+  outline: 'outline',
+  ghost: 'ghost',
+  danger: 'danger',
 }
 
-const props = withDefaults(defineProps<Props>(), { type: 'button' })
+function classes() {
+  return [
+    'button',
+    VARIANTS[props.variant ?? 'default'],
+    props.size === 'sm' ? 'sm' : props.size === 'icon' ? 'icon-only' : '',
+    props.class,
+  ].filter(Boolean).join(' ')
+}
 </script>
 
 <template>
-  <button
-    data-slot="button"
-    :type="type"
-    :class="cn(buttonVariants({ variant, size }), props.class)"
-  >
-    <slot />
-  </button>
+  <button :type="type" :class="classes()"><slot /></button>
 </template>

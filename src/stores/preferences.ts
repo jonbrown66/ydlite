@@ -7,7 +7,6 @@ export type DownloadPreferences = {
   defaultDir: string
   cookiesFilePath: string
   defaultQuality: 'best' | 'p720' | 'mp3'
-  clipboardSuggestions: boolean
   fileOptions: FileOptions
 }
 
@@ -21,7 +20,6 @@ export const usePreferencesStore = defineStore('preferences', () => {
       defaultDir: typeof saved.defaultDir === 'string' ? saved.defaultDir : localStorage.getItem('ydlite.defaultDir') || '',
       cookiesFilePath: typeof saved.cookiesFilePath === 'string' ? saved.cookiesFilePath : localStorage.getItem('ydlite.cookiesFilePath') || '',
       defaultQuality: ['best', 'p720', 'mp3'].includes(saved.defaultQuality || '') ? saved.defaultQuality! : 'best',
-      clipboardSuggestions: saved.clipboardSuggestions !== false,
       fileOptions: readFileOptions(saved.fileOptions),
     }
   }

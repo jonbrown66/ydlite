@@ -3,7 +3,6 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
 import { useAppearanceStore } from './stores/appearance'
-import './styles/tailwind.css'
 import './styles.css'
 
 document.documentElement.lang = 'en'

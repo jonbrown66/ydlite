@@ -25,11 +25,28 @@ pub struct DownloadState {
     inner: Arc<Mutex<InnerState>>,
 }
 
+/// Why the running worker was asked to stop. Pausing keeps partial files so
+/// yt-dlp can continue them on the next attempt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StopReason {
+    Cancel,
+    Pause,
+}
+
+impl StopReason {
+    fn status(self) -> &'static str {
+        match self {
+            StopReason::Cancel => "cancelled",
+            StopReason::Pause => "paused",
+        }
+    }
+}
+
 #[derive(Default)]
 struct InnerState {
     active: bool,
     child_id: Option<u32>,
-    cancel_requested: bool,
+    stop: Option<StopReason>,
 }
 
 impl DownloadState {
@@ -43,7 +60,7 @@ impl DownloadState {
         }
         state.active = true;
         state.child_id = None;
-        state.cancel_requested = false;
+        state.stop = None;
         Ok(())
     }
 
@@ -58,31 +75,51 @@ impl DownloadState {
         let mut state = self.inner.lock().await;
         state.active = false;
         state.child_id = None;
-        state.cancel_requested = false;
+        state.stop = None;
     }
 
-    pub async fn finish(&self, child_id: Option<u32>) -> bool {
+    pub async fn finish(&self, child_id: Option<u32>) -> Option<StopReason> {
         let mut state = self.inner.lock().await;
-        let was_cancelled = state.cancel_requested;
+        let stop = state.stop;
         if child_id.is_none() || state.child_id == child_id {
             state.active = false;
             state.child_id = None;
-            state.cancel_requested = false;
+            state.stop = None;
         }
-        was_cancelled
+        stop
     }
 
     pub async fn cancel_current(&self) -> Result<(), AppError> {
+        self.request_stop(StopReason::Cancel).await
+    }
+
+    pub async fn pause_current(&self) -> Result<(), AppError> {
+        self.request_stop(StopReason::Pause).await
+    }
+
+    async fn request_stop(&self, reason: StopReason) -> Result<(), AppError> {
         let child_id = {
             let mut state = self.inner.lock().await;
-            state.cancel_requested = true;
+            // Completion in flight keeps its outcome; the first user request wins.
+            state.stop.get_or_insert(reason);
             state.child_id
         };
 
         let Some(child_id) = child_id else {
             return Ok(());
         };
+        self.kill_child(child_id).await
+    }
 
+    async fn stop_child(&self) -> Result<(), AppError> {
+        let child_id = self.inner.lock().await.child_id;
+        match child_id {
+            Some(child_id) => self.kill_child(child_id).await,
+            None => Ok(()),
+        }
+    }
+
+    async fn kill_child(&self, child_id: u32) -> Result<(), AppError> {
         #[cfg(target_os = "windows")]
         let status = hidden_command("taskkill")
             .args(["/PID", &child_id.to_string(), "/T", "/F"])
@@ -104,7 +141,7 @@ impl DownloadState {
         match status {
             Ok(_) => Ok(()),
             Err(error) => Err(AppError::user(
-                "取消下载失败，请稍后重试。",
+                "停止下载失败，请稍后重试。",
                 error.to_string(),
             )),
         }
@@ -146,6 +183,7 @@ type ProgressEmitter = Arc<dyn Fn(DownloadProgressEvent) + Send + Sync>;
 #[serde(rename_all = "camelCase")]
 pub struct DownloadResult {
     pub cancelled: bool,
+    pub paused: bool,
     pub file_path: Option<String>,
     pub skipped: bool,
 }
@@ -190,8 +228,8 @@ async fn run_download_inner(
             if let Some(id) = child.id() {
                 state.set_child_id(id).await;
             }
-            if state.inner.lock().await.cancel_requested {
-                state.cancel_current().await?;
+            if state.inner.lock().await.stop.is_some() {
+                state.stop_child().await?;
             }
             let output = tokio::time::timeout(Duration::from_secs(30), child.wait_with_output())
                 .await
@@ -209,11 +247,11 @@ async fn run_download_inner(
         match preparation {
             Ok(json) => metadata = Some(json),
             Err(error) => {
-                let cancelled = state.finish(None).await;
-                if cancelled {
-                    emit(DownloadProgressEvent::status("cancelled", None));
+                if let Some(stop) = state.finish(None).await {
+                    emit(DownloadProgressEvent::status(stop.status(), None));
                     return Ok(DownloadResult {
-                        cancelled: true,
+                        cancelled: stop == StopReason::Cancel,
+                        paused: stop == StopReason::Pause,
                         file_path: None,
                         skipped: false,
                     });
@@ -249,21 +287,22 @@ async fn run_download_inner(
         }
     };
     if let Some(existing) = plan.existing {
-        let cancelled = state.finish(None).await;
-        let file_path = if cancelled {
-            None
-        } else {
+        let stop = state.finish(None).await;
+        let file_path = if stop.is_none() {
             Some(existing.to_string_lossy().into_owned())
+        } else {
+            None
         };
         emit(DownloadProgressEvent {
             file_path: file_path.clone(),
             message: Some("Already downloaded; existing file retained.".into()),
-            ..DownloadProgressEvent::status(if cancelled { "cancelled" } else { "finished" }, None)
+            ..DownloadProgressEvent::status(stop.map_or("finished", StopReason::status), None)
         });
         return Ok(DownloadResult {
-            cancelled,
+            cancelled: stop == Some(StopReason::Cancel),
+            paused: stop == Some(StopReason::Pause),
             file_path,
-            skipped: !cancelled,
+            skipped: stop.is_none(),
         });
     }
     loop {
@@ -314,9 +353,9 @@ async fn run_download_inner(
         };
 
         state.set_child_id(child_id).await;
-        let cancel_requested = state.inner.lock().await.cancel_requested;
-        if cancel_requested {
-            if let Err(error) = state.cancel_current().await {
+        let stop_requested = state.inner.lock().await.stop;
+        if stop_requested.is_some() {
+            if let Err(error) = state.stop_child().await {
                 let _ = child.kill().await;
                 state.finish(Some(child_id)).await;
                 return Err(error);
@@ -382,10 +421,10 @@ async fn run_download_inner(
         if let Some(writer) = input_writer {
             let _ = writer.await;
         }
-        let cancelled = {
+        let stop_requested = {
             let mut inner = state.inner.lock().await;
             inner.child_id = None;
-            inner.cancel_requested
+            inner.stop
         };
         let detail = {
             let lines = log_lines.lock().await;
@@ -398,7 +437,7 @@ async fn run_download_inner(
         let final_progress = last_progress.lock().await.clone();
         if using_metadata
             && !status.success()
-            && !cancelled
+            && stop_requested.is_none()
             && should_refresh_metadata(&detail, final_progress.as_ref())
         {
             // Expired URLs or changed site signatures get one fresh extraction. Keep
@@ -409,16 +448,17 @@ async fn run_download_inner(
             });
             continue;
         }
-        let was_cancelled = state.finish(None).await;
+        let stop = state.finish(None).await;
         let final_file_path = {
             let path = output_path.lock().await;
             path.clone()
         };
 
-        if was_cancelled {
-            emit(DownloadProgressEvent::status("cancelled", None));
+        if let Some(stop) = stop {
+            emit(DownloadProgressEvent::status(stop.status(), None));
             return Ok(DownloadResult {
-                cancelled: true,
+                cancelled: stop == StopReason::Cancel,
+                paused: stop == StopReason::Pause,
                 file_path: None,
                 skipped: false,
             });
@@ -451,6 +491,7 @@ async fn run_download_inner(
             });
             return Ok(DownloadResult {
                 cancelled: false,
+                paused: false,
                 file_path: final_file_path,
                 skipped: false,
             });
@@ -833,8 +874,21 @@ mod tests {
         state.cancel_current().await.unwrap();
         assert!(state.reserve().await.is_err());
         state.set_child_id(42).await;
-        assert!(state.finish(Some(42)).await);
+        assert_eq!(state.finish(Some(42)).await, Some(StopReason::Cancel));
         assert!(state.reserve().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn pause_is_distinct_from_cancel_and_the_first_request_wins() {
+        let state = DownloadState::default();
+        state.reserve().await.unwrap();
+        state.pause_current().await.unwrap();
+        state.cancel_current().await.unwrap();
+        state.set_child_id(7).await;
+        assert_eq!(state.finish(Some(7)).await, Some(StopReason::Pause));
+        assert!(state.reserve().await.is_ok());
+        state.cancel_current().await.unwrap();
+        assert_eq!(state.finish(None).await, Some(StopReason::Cancel));
     }
 
     #[test]
@@ -1033,5 +1087,126 @@ mod tests {
         server.join().unwrap();
         std::fs::remove_dir_all(root).unwrap();
         result
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the installed yt-dlp executable and a local HTTP fixture"]
+    async fn real_pause_keeps_partial_file_and_resume_continues_it() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Mutex as StdMutex;
+
+        let program = tool_paths::ytdlp();
+        assert!(
+            program.is_file(),
+            "Install yt-dlp before running this check"
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let stop = Arc::new(AtomicBool::new(false));
+        let server_stop = stop.clone();
+        let media = Arc::new(vec![7u8; 2 * 1024 * 1024]);
+        let server_media = media.clone();
+        let range_start = Arc::new(StdMutex::new(None::<u64>));
+        let server_range = range_start.clone();
+        let server = std::thread::spawn(move || {
+            while !server_stop.load(Ordering::Relaxed) {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    std::thread::sleep(Duration::from_millis(5));
+                    continue;
+                };
+                let body = server_media.clone();
+                let range = server_range.clone();
+                std::thread::spawn(move || {
+                    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                    let mut request = [0u8; 4096];
+                    let length = stream.read(&mut request).unwrap_or(0);
+                    let request = String::from_utf8_lossy(&request[..length]).to_string();
+                    let offset = request
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("range: bytes=")?
+                                .trim()
+                                .trim_end_matches('-')
+                                .parse::<u64>()
+                                .ok()
+                        })
+                        .unwrap_or(0);
+                    if offset > 0 {
+                        *range.lock().unwrap() = Some(offset);
+                        let header = format!(
+                            "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\nContent-Range: bytes {}-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            offset, body.len() - 1, body.len(), body.len() as u64 - offset
+                        );
+                        let _ = stream.write_all(header.as_bytes());
+                    } else {
+                        let header = format!("HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                        let _ = stream.write_all(header.as_bytes());
+                    }
+                    if !request.starts_with("HEAD ") {
+                        for chunk in body[offset as usize..].chunks(8192) {
+                            if stream.write_all(chunk).is_err() {
+                                break;
+                            }
+                            std::thread::sleep(Duration::from_millis(12));
+                        }
+                    }
+                });
+            }
+        });
+        let dir = std::env::temp_dir().join(format!("ydlite-pause-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let url = format!("{base}/media.mp4");
+        let state = DownloadState::default();
+        let active = state.clone();
+        let started = Arc::new(tokio::sync::Notify::new());
+        let notify = started.clone();
+        let task = tokio::spawn(run_download_inner(active, DownloadRequest {
+            request_id: Some("test-pause".into()),
+            url: url.clone(), dir: dir.to_string_lossy().into(),
+            mode: crate::commands::DownloadMode::Best, format_id: None, options: Default::default(), file_options: Default::default(), overwrite_confirmed: false,
+        }, dir.clone(), None, program.clone(), PathBuf::new(), Arc::new(move |event| {
+            if event.status == "downloading" {
+                let downloaded = event.metrics.as_ref().and_then(|metrics| metrics.downloaded_bytes).unwrap_or(0);
+                if downloaded > 0 {
+                    notify.notify_waiters();
+                }
+            }
+        })));
+        tokio::time::timeout(Duration::from_secs(60), started.notified()).await.expect("download never reported bytes");
+        state.pause_current().await.unwrap();
+        let outcome = tokio::time::timeout(Duration::from_secs(20), task).await.unwrap().unwrap().unwrap();
+        assert!(outcome.paused, "a pause must not be reported as a cancel");
+        assert!(!outcome.cancelled);
+        assert!(outcome.file_path.is_none());
+        let part = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "part"))
+            .expect("pausing must leave the partial file for resuming");
+        assert!(std::fs::metadata(&part).unwrap().len() > 0);
+
+        let resumed = run_download_inner(
+            DownloadState::default(),
+            DownloadRequest {
+                request_id: Some("test-resume".into()),
+                url, dir: dir.to_string_lossy().into(),
+                mode: crate::commands::DownloadMode::Best, format_id: None, options: Default::default(), file_options: Default::default(), overwrite_confirmed: false,
+            },
+            dir.clone(), None, program, PathBuf::new(), Arc::new(|_| {}),
+        )
+        .await
+        .unwrap();
+        assert!(!resumed.paused && !resumed.cancelled);
+        let file = PathBuf::from(resumed.file_path.expect("resume completes with a file"));
+        assert!(std::fs::read(&file).unwrap() == *media);
+        assert!(range_start.lock().unwrap().is_some_and(|offset| offset > 0), "resume must continue from the partial file");
+        stop.store(true, Ordering::Relaxed);
+        server.join().unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

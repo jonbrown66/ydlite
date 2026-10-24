@@ -10,3 +10,6 @@ tmp-test/
 .DS_Store
 .env
 .env.local
+
+# Local build and test output
+test-output/
