@@ -50,4 +50,14 @@
   --black-a1: rgba(0, 0, 0, 0.05);
   --black-a6: rgba(0, 0, 0, 0.4);
   --white: #fff;
+  --color-focus: var(--indigo-11);
+  --color-surface-page: var(--slate-1);
+  --color-surface-subtle: var(--slate-2);
+  --color-surface-accent: var(--indigo-2);
+  --color-text-primary: var(--slate-12);
+  --color-text-secondary: var(--slate-11);
+  --color-text-accent: var(--indigo-11);
+  --color-action-primary: var(--indigo-9);
+  --color-action-primary-hover: var(--indigo-10);
+  --color-border-default: var(--slate-6);
 }
